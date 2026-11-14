@@ -1,0 +1,23 @@
+# data and models (licensed / large)
+data/
+artifacts/
+*.parquet
+*.pt
+*.safetensors
+# env
+.env
+.env.*
+!.env.example
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+# node
+node_modules/
+dist/
+# os / editor
+.DS_Store
+.idea/
+.vscode/
