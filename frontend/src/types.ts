@@ -73,11 +73,8 @@ export interface OrderDetail extends OrderRow {
 }
 
 export interface OrderStats {
-  total: number
   by_band: Record<string, number>
-  by_market: Json[]
   by_shipping_mode: Json[]
-  champion_version: number | null
 }
 
 export interface Incident {
@@ -102,7 +99,6 @@ export interface IncidentStats {
   by_status: Record<string, number>
   by_label: Record<string, number>
   needs_review: number
-  reviews_since_champion: number
 }
 
 export interface ModelVersion {
