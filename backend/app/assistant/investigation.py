@@ -117,7 +117,7 @@ def knowledge(db: Session, state: State) -> dict:
         return {"guidance": {"query": query, "chunks": [], "evidence_gap": True}, "guidance_summary": NO_GUIDANCE,
                 "gaps": gaps}
     guidance = {"query": query, "chunks": [chunk.model_dump(mode="json") for chunk in result.chunks],
-                "evidence_gap": result.evidence_gap}
+                "evidence_gap": result.evidence_gap, "best_score": result.best_score}
     found = {"guidance": guidance}
     if result.evidence_gap or not result.chunks:
         return {**found, "guidance_summary": NO_GUIDANCE}

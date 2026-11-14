@@ -132,7 +132,7 @@ interface NodeOutput {
   risk?: { total: number; high: number } | null
   gaps?: Record<string, string>
   findings?: string
-  guidance?: { chunks: { score: number }[]; evidence_gap: boolean }
+  guidance?: { chunks: unknown[]; evidence_gap: boolean; best_score?: number }
   plan?: unknown[]
   errors?: string[]
 }
@@ -148,7 +148,7 @@ function summarize({ node, output }: Step): string {
   if (node === "knowledge") {
     const chunks = o.guidance?.chunks ?? []
     if (o.guidance?.evidence_gap) return "evidence gap"
-    return `${chunks.length} chunks, best score ${Math.max(...chunks.map((c) => c.score)).toFixed(2)}`
+    return `${chunks.length} chunks, best similarity ${(o.guidance?.best_score ?? 0).toFixed(2)}`
   }
   if (node === "planning") return `${o.plan?.length ?? 0} actions ranked`
   return `errors: ${o.errors?.length ? o.errors.join("; ") : "none"}`
