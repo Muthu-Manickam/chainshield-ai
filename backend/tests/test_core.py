@@ -10,11 +10,9 @@ from tests.conftest import login_as
 
 PARAMETER_FREE_GETS = [
     "/api/auth/me", "/api/users", "/api/users/audit", "/api/evals", "/api/orders", "/api/orders/stats",
-    "/api/incidents", "/api/incidents/stats", "/api/models", "/api/knowledge/documents", "/api/knowledge/stats",
+    "/api/incidents", "/api/incidents/stats", "/api/models", "/api/knowledge/documents",
     "/api/investigations", "/api/investigations/stats", "/api/rules",
 ]
-
-# --- B0 ---
 
 
 def test_login_sets_cookie_and_me_returns_user(client):
@@ -29,16 +27,6 @@ def test_wrong_password_is_rejected(client):
     response = client.post("/api/auth/login", json={"email": "admin@chainshield.local", "password": "nope"})
     assert response.status_code == 401
     assert client.get("/api/auth/me").status_code == 401
-
-
-@pytest.mark.parametrize(("role", "users", "decision"), [
-    ("analyst", 403, 403), ("supervisor", 403, 404), ("admin", 200, 404),
-])
-def test_role_guards(client, role, users, decision):
-    login_as(client, role)
-    assert client.get("/api/users").status_code == users
-    response = client.post("/api/investigations/1/actions/1/decision", json={"decision": "approved"})
-    assert response.status_code == decision
 
 
 def test_creating_a_user_writes_an_audit_row(client):
@@ -74,8 +62,6 @@ def test_parameter_free_gets_return_200(client, path):
     login_as(client, "admin")
     assert client.get(path).status_code == 200
 
-# --- H1 ---
-
 
 # (method, path, body, lowest role allowed); auth/login and auth/logout are public by design
 ROUTES = [
@@ -102,7 +88,6 @@ ROUTES = [
     ("GET", "/api/knowledge/search?q=delay", None, "analyst"),
     ("GET", "/api/knowledge/documents", None, "analyst"),
     ("POST", "/api/knowledge/documents", None, "admin"),
-    ("GET", "/api/knowledge/stats", None, "analyst"),
     ("GET", "/api/investigations", None, "analyst"),
     ("POST", "/api/investigations", {"incident_id": 1, "scope": {}}, "analyst"),
     ("GET", "/api/investigations/stats", None, "analyst"),

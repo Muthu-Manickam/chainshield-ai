@@ -36,7 +36,7 @@ def assign_blocks(dates: pd.Series) -> pd.Series:
     return pd.cut(position, edges, labels=[name for name, _ in BLOCKS]).astype(str)
 
 
-def prepare_orders() -> pd.DataFrame:
+def prepare_orders():
     items = pd.read_csv(data_dir() / "raw/dataco/DataCoSupplyChainDataset.csv", encoding="latin-1")
     items = items[~items["Order Status"].isin(["CANCELED", "SUSPECTED_FRAUD"])]
     items = items.sort_values("Order Item Total", ascending=False)
@@ -61,7 +61,6 @@ def prepare_orders() -> pd.DataFrame:
     print(f"orders: {len(orders)} (late rate {orders.label.mean():.3f})")
     mix = pd.crosstab(orders.block, orders.market, normalize="index").round(3)
     print(mix.assign(orders=orders.block.value_counts()).loc[[name for name, _ in BLOCKS]])
-    return orders
 
 
 def read_splits() -> pd.DataFrame:
@@ -74,7 +73,7 @@ def read_splits() -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True).drop_duplicates("tweet_id")
 
 
-def prepare_tweets() -> pd.DataFrame:
+def prepare_tweets():
     events = sorted((data_dir() / "raw/crisismmd/events").glob("*.tsv"))
     rows = pd.concat([pd.read_csv(path, sep="\t", dtype={"tweet_id": str}) for path in events])
     tweets = pd.DataFrame({
@@ -93,7 +92,6 @@ def prepare_tweets() -> pd.DataFrame:
     write(tweets, "tweets.parquet")
     print(f"tweets: {len(tweets)}, pool {tweets.pool.sum()}, pool holdout {tweets.pool_holdout.sum()}")
     print(pd.crosstab(tweets.category, tweets.split))
-    return tweets
 
 
 def write(frame: pd.DataFrame, name: str):

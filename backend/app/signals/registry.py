@@ -23,7 +23,6 @@ from app.signals.models import Incident, ModelVersion, Order
 
 GATE_MARGIN = 0.005  # candidate's primary metric may be at most this much below the champion's
 BRIER_MARGIN = 0.002  # Brier may be this much worse; smaller gaps are noise on ~3k promotion orders
-RELEASABLE_BLOCKS = ("s1", "s2")
 
 # task -> (version id, loaded model); reloaded when the task's champion changes
 _cache: dict[str, tuple[int, Predictor]] = {}
@@ -44,8 +43,7 @@ def register_version(db: Session, task: str, artifact_dir: Path) -> ModelVersion
                                                            ModelVersion.status == "champion"))
     version = ModelVersion(
         task=task, version=(latest or 0) + 1, family=meta["family"], artifact_path=str(artifact_dir),
-        artifact_hash=hash_dir(artifact_dir), snapshot_hash=meta.get("snapshot_hash"),
-        git_commit=meta.get("git_commit"), metrics=json.loads((artifact_dir / "metrics.json").read_text()),
+        artifact_hash=hash_dir(artifact_dir), metrics=json.loads((artifact_dir / "metrics.json").read_text()),
         status="candidate" if has_champion else "champion",
         promoted_at=None if has_champion else datetime.now(UTC),
     )
@@ -55,7 +53,7 @@ def register_version(db: Session, task: str, artifact_dir: Path) -> ModelVersion
 
 
 def champion(db: Session, task: str) -> tuple[ModelVersion, Predictor] | None:
-    version = db.scalar(select(ModelVersion).where(ModelVersion.task == task, ModelVersion.status == "champion"))
+    version = current_champion(db, task)
     if version is None:
         return None
     cached = _cache.get(task)
@@ -74,13 +72,9 @@ def list_versions(db: Session, task: str | None) -> list[ModelVersion]:
 def model_info(db: Session, task: str) -> dict:
     versions = list_versions(db, task)
     current = next((v for v in versions if v.status == "champion"), None)
-    if current is None:
-        return {"task": task, "champion": None, "versions": len(versions)}
-    return {
-        "task": task, "versions": len(versions),
-        "champion": {"id": current.id, "version": current.version, "family": current.family,
-                     "promoted_at": current.promoted_at.isoformat(), "metrics": current.metrics},
-    }
+    champion = current and {"id": current.id, "version": current.version, "family": current.family,
+                            "promoted_at": current.promoted_at.isoformat(), "metrics": current.metrics}
+    return {"task": task, "versions": len(versions), "champion": champion}
 
 
 def current_champion(db: Session, task: str) -> ModelVersion | None:
@@ -88,8 +82,6 @@ def current_champion(db: Session, task: str) -> ModelVersion | None:
 
 
 def release_batch(db: Session, block: str, user: User) -> int:
-    if block not in RELEASABLE_BLOCKS:
-        raise ValueError(f"only {', '.join(RELEASABLE_BLOCKS)} can be released for retraining")
     count = db.execute(update(Order).where(Order.block == block, ~Order.released).values(released=True)).rowcount
     record_audit(db, user, "model.release_batch", "orders", None, {"block": block, "count": count})
     db.commit()
@@ -137,9 +129,9 @@ def retrain(db: Session, task: str, family: str) -> dict:
             "log": run.stdout[-2000:]}
 
 
-def promotion_metrics(task: str, version: ModelVersion) -> dict:
+def promotion_metrics(version: ModelVersion) -> dict:
     """Metrics on the promotion set: s3 for risk, the pool holdout for incident models."""
-    if task == "risk":
+    if version.task == "risk":
         model = version.family.removeprefix("risk_")
         s3 = version.metrics["s3"][model]
         return {"pr_auc": s3["pr_auc"], "brier": s3["brier"], "val_roc_auc": version.metrics["val"][model]["roc_auc"]}
@@ -152,7 +144,7 @@ def store_gate(db: Session, candidate: ModelVersion) -> None:
     champ = current_champion(db, candidate.task)
     if champ is None or champ.id == candidate.id:
         return
-    new, old = promotion_metrics(candidate.task, candidate), promotion_metrics(champ.task, champ)
+    new, old = promotion_metrics(candidate), promotion_metrics(champ)
     if candidate.task == "risk":
         checks = {"pr_auc": new["pr_auc"] >= old["pr_auc"] - GATE_MARGIN, "brier": new["brier"] <= old["brier"] + BRIER_MARGIN,
                   "no_leakage_alarm": new["val_roc_auc"] <= LEAKAGE_ALARM}
@@ -180,7 +172,6 @@ def promote(db: Session, version_id: int, user: User, background: BackgroundTask
         "gate_passed": version.gate["passed"] if version.gate else None,
     })
     db.commit()
-    _cache.pop(version.task, None)
     rescore = orders.score_orders if version.task == "risk" else incidents.reclassify_unreviewed
-    start_job(db, background, f"rescore_{version.task}", rescore, version.id)
+    start_job(db, background, f"rescore_{version.task}", rescore)
     return version

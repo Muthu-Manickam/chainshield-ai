@@ -10,24 +10,16 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.db import DB
 from app.core.models import AuditLog, User
-from app.core.schemas import UserCreate, UserUpdate
+from app.core.schemas import AuditEntry, UserCreate, UserUpdate
 
 COOKIE = "cs_session"
 SESSION_HOURS = 12
 hasher = PasswordHash.recommended()
 
 
-def hash_password(password: str) -> str:
-    return hasher.hash(password)
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    return hasher.verify(password, password_hash)
-
-
 def login(db: Session, response: Response, email: str, password: str) -> User | None:
     user = db.scalar(select(User).where(User.email == email))
-    if not user or not user.is_active or not verify_password(password, user.password_hash):
+    if not user or not user.is_active or not hasher.verify(password, user.password_hash):
         return None
     expires = datetime.now(UTC) + timedelta(hours=SESSION_HOURS)
     token = jwt.encode({"sub": str(user.id), "exp": expires}, settings.jwt_secret, algorithm="HS256")
@@ -73,7 +65,7 @@ def list_users(db: Session) -> list[User]:
 def create_user(db: Session, data: UserCreate, actor: User | None) -> User:
     if db.scalar(select(User).where(User.email == data.email)):
         raise ValueError("Email already registered")
-    user = User(email=data.email, password_hash=hash_password(data.password), role=data.role)
+    user = User(email=data.email, password_hash=hasher.hash(data.password), role=data.role)
     db.add(user)
     db.flush()
     record_audit(db, actor, "create", "user", user.id, {"email": user.email, "role": user.role})
@@ -87,7 +79,7 @@ def update_user(db: Session, user_id: int, data: UserUpdate, actor: User) -> Use
         return None
     changes = data.model_dump(exclude_none=True)
     if "password" in changes:
-        user.password_hash = hash_password(changes.pop("password"))
+        user.password_hash = hasher.hash(changes.pop("password"))
     for field, value in changes.items():
         setattr(user, field, value)
     record_audit(db, actor, "update", "user", user.id, changes)
@@ -101,5 +93,7 @@ def record_audit(db: Session, user: User | None, action: str, entity: str, entit
                     entity_id=None if entity_id is None else str(entity_id), detail=detail))
 
 
-def list_audit(db: Session, limit: int = 200) -> list[AuditLog]:
-    return list(db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(limit)))
+def list_audit(db: Session) -> list[AuditEntry]:
+    rows = db.execute(select(AuditLog, User.email).outerjoin(User, AuditLog.user_id == User.id)
+                      .order_by(AuditLog.id.desc()).limit(200))
+    return [AuditEntry.model_validate(entry).model_copy(update={"user_email": email}) for entry, email in rows]

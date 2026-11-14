@@ -12,8 +12,6 @@ dependencies = [
     "joblib==1.6.0",
     "torch==2.15.0",
     "transformers==5.23.0",
-    "datasets==5.2.0",
-    "accelerate==1.15.0",
 ]
 
 [dependency-groups]

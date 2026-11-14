@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException, Response
 
 from app.core import auth, jobs, schemas
-from app.core.auth import AdminUser, CurrentUser, require_role
+from app.core.auth import AdminUser, CurrentUser
 from app.core.db import DB
 
 router = APIRouter(prefix="/api")
-ADMIN = require_role("admin")
 
 
 @router.post("/auth/login", response_model=schemas.User)
@@ -26,8 +25,8 @@ def me(user: CurrentUser):
     return user
 
 
-@router.get("/users", response_model=list[schemas.User], dependencies=[ADMIN])
-def list_users(db: DB):
+@router.get("/users", response_model=list[schemas.User])
+def list_users(db: DB, _: AdminUser):
     return auth.list_users(db)
 
 
@@ -39,8 +38,8 @@ def create_user(data: schemas.UserCreate, db: DB, admin: AdminUser):
         raise HTTPException(409, str(exc))
 
 
-@router.get("/users/audit", response_model=list[schemas.AuditEntry], dependencies=[ADMIN])
-def list_audit(db: DB):
+@router.get("/users/audit", response_model=list[schemas.AuditEntry])
+def list_audit(db: DB, _: AdminUser):
     return auth.list_audit(db)
 
 

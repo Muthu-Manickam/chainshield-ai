@@ -15,6 +15,7 @@ from xgboost import XGBClassifier
 
 from ml.data import artifacts_dir, data_dir
 from ml.features import ORDER_FEATURES, order_matrix
+from ml.predictor import Predictor
 
 LEAKAGE_ALARM = 0.85
 CANDIDATES = {
@@ -78,7 +79,7 @@ def evaluate_all(fitted: dict, train: pd.DataFrame, frames: dict, categories: di
     return metrics, thresholds
 
 
-def train(version: int, extra_blocks=()) -> dict:
+def train(version: int, extra_blocks=()):
     orders = pd.read_parquet(data_dir() / "processed/orders.parquet")
     train_rows = orders[orders.block.isin(["train", *extra_blocks])]
     frames = {"val": orders[orders.block == "val"], "s3": orders[orders.block == "s3"]}
@@ -103,13 +104,10 @@ def train(version: int, extra_blocks=()) -> dict:
     (out / "metadata.json").write_text(json.dumps(metadata, indent=2))
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
     print_metrics(metrics, best)
-    return metrics
 
 
-def evaluate_final(version: int) -> dict:
+def evaluate_final(version: int):
     """Score the sealed test block once and add it to metrics.json."""
-    from ml.predictor import Predictor
-
     out = model_dir(version)
     predictor = Predictor.load(out)
     test = pd.read_parquet(data_dir() / "processed/orders.parquet").query("block == 'test'")
@@ -117,7 +115,6 @@ def evaluate_final(version: int) -> dict:
     metrics = json.loads((out / "metrics.json").read_text()) | {"test": {predictor.family: test_scores}}
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2))
     print(f"risk v{version} test ({predictor.family}): {test_scores}")
-    return test_scores
 
 
 def print_metrics(metrics: dict, best: str):

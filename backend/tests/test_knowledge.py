@@ -1,4 +1,3 @@
-# --- K1 ---
 import re
 
 from sqlalchemy import func, select
@@ -76,4 +75,3 @@ def test_search_route(client, db, tmp_path):
     login_as(client, "analyst")
     body = client.get("/api/knowledge/search", params={"q": "who approves holding a shipment?"}).json()
     assert body["chunks"][0]["citation_key"] == "TST-02#1"
-    assert client.get("/api/knowledge/stats").json()["documents"] == 1

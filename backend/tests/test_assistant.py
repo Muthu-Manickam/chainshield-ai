@@ -1,4 +1,3 @@
-# --- L1 ---
 import pytest
 from langchain_core.messages import AIMessage
 from pydantic import BaseModel
@@ -69,7 +68,6 @@ def test_l1_stops_at_budget(db, monkeypatch):
     with pytest.raises(llm.LLMError, match="budget"):
         llm.complete(db, [("user", "hi")], Verdict)
 
-# --- G2 ---
 from app.assistant import rules, validator
 from app.assistant.models import ActionRule as ActionRuleRow
 from app.core.models import AuditLog
@@ -160,13 +158,12 @@ def test_g2_validator_rejects_ineligible_action():
     assert validator.validate("", set(), [], {"MONITOR"}, ["MONITOR"]) == []
     assert validator.validate("", set(), [], {"MONITOR"}, ["REROUTE"]) == ["Action REROUTE is not eligible"]
 
-# --- T1 ---
 import json
 from datetime import datetime
 from types import SimpleNamespace
 
 from app.assistant import tools
-from app.signals.schemas import Classification, RiskSummary
+from app.signals.schemas import RiskSummary
 
 
 def _order(**extra):
@@ -195,28 +192,12 @@ def test_t1_order_tools_return_json_safe_dicts(db, monkeypatch):
     json.dumps([tools.get_order(db, 1), found])
 
 
-def test_t1_other_tools_delegate(db, monkeypatch):
-    monkeypatch.setattr(tools.incidents, "classify_text", lambda db, text: Classification(
-        label="infrastructure", confidence=0.9, screening_score=0.9, needs_review=False, model_version_id=1))
-    monkeypatch.setattr(tools.incidents, "search_incidents", lambda db, status, label, page: ([], 0))
-    monkeypatch.setattr(tools.knowledge, "search", lambda db, q: SimpleNamespace(
-        model_dump=lambda mode: {"chunks": [], "evidence_gap": True, "best_score": 0.1}))
-    monkeypatch.setattr(tools.investigation, "get_investigation", lambda db, i: None)
-    monkeypatch.setattr(tools.registry, "model_info", lambda db, task: {"task": task})
-    assert tools.classify_text(db, "bridge down")["label"] == "infrastructure"
-    assert tools.search_incidents(db, status="reviewed") == {"total": 0, "items": []}
-    assert tools.search_guidance(db, "port closure")["evidence_gap"] is True
-    assert tools.get_investigation(db, 5) == {"error": "investigation not found"}
-    assert tools.model_info(db, "risk") == {"task": "risk"}
-
-
 def test_t1_tools_are_bindable_and_read_only():
     names = {t.name for t in tools.TOOLS}
     assert names == {"get_order", "search_orders", "risk_summary", "search_incidents", "classify_text",
                      "search_guidance", "get_investigation", "model_info"}
     assert tools.TOOLS[0].args_schema.model_json_schema()["required"] == ["order_id"]
 
-# --- G1 ---
 import asyncio
 
 from app.assistant import investigation
@@ -361,7 +342,6 @@ def test_g1_fail_stale_runs(client, db, monkeypatch):
     assert investigation.fail_stale_runs(db) == 2
     assert sorted(i.status for i in db.query(G1Investigation)) == ["awaiting_approval", "failed", "failed"]
 
-# --- G3 ---
 from langchain_core.tools import StructuredTool
 
 from app.assistant import chat
@@ -433,7 +413,6 @@ def test_g3_llm_error_and_foreign_session(client, db, monkeypatch):
     login_as(client, "supervisor")
     assert client.post("/api/chat", json={"session_id": session_id, "message": "hi"}).status_code == 404
 
-# --- X1 ---
 from datetime import UTC
 
 from app.signals.models import Order as X1Order

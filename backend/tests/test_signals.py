@@ -1,4 +1,3 @@
-# --- S1 ---
 import pandas as pd
 import pytest
 from ml.features import ORDER_FEATURES
@@ -36,7 +35,7 @@ def scored(db, orders_parquet, risk_predictor, monkeypatch):
     db.commit()
     monkeypatch.setattr(registry, "champion", lambda db, task: (version, risk_predictor))
     assert orders.load_orders(db, orders_parquet) == 2000
-    assert orders.score_orders(db, version.id) == 2000
+    assert orders.score_orders(db) == 2000
     return version
 
 
@@ -52,7 +51,7 @@ def test_s1_load_and_score(db, scored, risk_predictor):
     threshold = risk_predictor.metadata["threshold"]
     assert all((o.risk_band == "low") == (o.risk_score < threshold) for o in db.scalars(select(Order)))
     assert {o.risk_band for o in db.scalars(select(Order))} == {"low", "medium", "high"}
-    assert orders.score_orders(db, scored.id) == 0
+    assert orders.score_orders(db) == 0
 
 
 def test_s1_search_hides_trained_blocks_and_filters(db, scored):
@@ -77,9 +76,8 @@ def test_s1_summary_stats_and_detail(db, scored, client):
     assert 0 < summary.mean_score < 1
     assert orders.risk_summary(db, OrderFilter(include_trained=True)).total == 2000
     stats = orders.order_stats(db)
-    assert stats.total == 1000 and stats.champion_version == 1
+    assert sum(stats.by_band.values()) == 1000
     assert stats.by_band == {"low": summary.low, "medium": summary.medium, "high": summary.high}
-    assert [g["market"] for g in stats.by_market] == ["LATAM"]
 
     login_as(client, "analyst")
     order = db.scalars(select(Order)).first()
@@ -95,9 +93,7 @@ def test_s1_seed_orders_is_idempotent(db, orders_parquet, monkeypatch):
     seed_orders(db)
     assert db.scalar(select(func.count()).select_from(Order)) == 2000
 
-# --- S2 ---
-
-from ml.text import CLASSES, load_model
+from ml.text import CLASSES
 
 from app.core.models import AuditLog, User
 from app.seed import seed_incidents
@@ -122,7 +118,7 @@ def incident_champion(db, monkeypatch):
                            metrics={}, status="champion")
     db.add(version)
     db.commit()
-    model = load_model(path)
+    model = Predictor.load(path)
     monkeypatch.setattr(registry, "champion", lambda db, task: (version, model))
     return version
 
@@ -181,7 +177,7 @@ def test_s2_review_stats_and_audit(db, tweets_dir, analyst, incident_champion):
         incidents.review(db, first.id, "nonsense", analyst)
     stats = incidents.incident_stats(db)
     assert stats.by_status["reviewed"] == 1 and sum(stats.by_status.values()) == 12
-    assert stats.by_label["rescue_donation"] >= 1 and stats.reviews_since_champion == 1
+    assert stats.by_label["rescue_donation"] >= 1
     assert stats.needs_review == stats.by_status.get("needs_review", 0)
     rows, total = incidents.search_incidents(db, "reviewed", "rescue_donation", 1)
     assert total == 1 and rows[0].id == first.id
@@ -206,7 +202,7 @@ def test_s2_reclassify_touches_only_unreviewed(db, tweets_dir, analyst, incident
     incidents.review(db, first.id, "other_relevant", analyst)
     second.predicted_label = "stale"
     db.commit()
-    assert incidents.reclassify_unreviewed(db, incident_champion.id) == 2
+    assert incidents.reclassify_unreviewed(db) == 2
     db.refresh(second)
     assert second.predicted_label in CLASSES and first.status == "reviewed"
 
@@ -224,8 +220,6 @@ def test_s2_seed_incidents_releases_forty_once(db, tweets_dir, incident_champion
 
 
 def test_s2_api_duplicate_is_409(client, incident_champion):
-    from tests.conftest import login_as
-
     login_as(client, "analyst")
     tweets = pd.read_parquet(settings.data_dir / "processed" / "tweets.parquet")
     dup = client.post("/api/incidents", json={"text": tweets[tweets.split == "test"].text.iloc[0]})
@@ -233,8 +227,6 @@ def test_s2_api_duplicate_is_409(client, incident_champion):
     ok = client.post("/api/incidents", json={"text": "Shelters are full and families need blankets and water"})
     assert ok.status_code == 200 and ok.json()["source"] == "manual"
     assert client.get("/api/incidents/stats").json()["by_status"]
-
-# --- RG1 ---
 
 from app.seed import seed_models
 
@@ -270,8 +262,6 @@ def test_rg1_seed_models_registers_both_champions_once(db):
     _, model = registry.champion(db, "incident")
     assert model.predict_proba(["the bridge collapsed after the flood"]).shape == (1, 5)
     assert registry.model_info(db, "incident")["versions"] == 2
-
-# --- RG2 ---
 
 import json
 import shutil
@@ -314,9 +304,9 @@ def run_retrain(client, task: str, family: str) -> dict:
 def test_rg2_release_retrain_promote_and_rollback(db, client, orders_parquet, artifacts, monkeypatch):
     orders.load_orders(db, orders_parquet)
     v1 = registry.register_version(db, "risk", artifacts / "risk" / "v1")
-    orders.score_orders(db, v1.id)
+    orders.score_orders(db)
     login_as(client, "admin")
-    assert client.post("/api/models/release-batch", json={"block": "s3"}).status_code == 400
+    assert client.post("/api/models/release-batch", json={"block": "s3"}).status_code == 422
     assert client.post("/api/models/release-batch", json={"block": "s1"}).json() == {"released": 1000}
 
     def worse_pr_auc(metrics):

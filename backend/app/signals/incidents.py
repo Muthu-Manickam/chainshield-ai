@@ -1,4 +1,3 @@
-import json
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
@@ -37,17 +36,15 @@ def classify(db: Session, texts: list[str]) -> list[Classification]:
     if not texts:
         return []
     version, model = registry.champion(db, "incident")
-    threshold = json.loads((settings.artifacts_dir / version.artifact_path / "metadata.json").read_text())[
-        "review_threshold"]
+    threshold = model.metadata["review_threshold"]
     probs = model.predict_proba(texts)
     humanitarian = 1 - probs[:, model.classes.index("not_humanitarian")]
-    results = [
+    return [
         Classification(label=model.classes[row.argmax()], confidence=float(row.max()), screening_score=float(score),
                        needs_review=bool(row.max() < threshold or len(clean_text(text).split()) < MIN_TOKENS),
                        model_version_id=version.id)
         for text, row, score in zip(texts, probs, humanitarian)
     ]
-    return results
 
 
 def classify_text(db: Session, text: str) -> Classification:
@@ -87,17 +84,21 @@ def add_manual(db: Session, text: str, user: User) -> Incident:
     return incident
 
 
+def mark_reviewed(incident: Incident, label: str, user: User, source: str) -> None:
+    incident.reviewed_label = label
+    incident.reviewed_by = user.id
+    incident.reviewed_at = datetime.now(UTC)
+    incident.review_source = source
+    incident.status = "reviewed"
+
+
 def review(db: Session, incident_id: int, label: str, user: User) -> Incident | None:
     incident = db.get(Incident, incident_id)
     if incident is None:
         return None
     if label not in CLASSES:
         raise ValueError(f"unknown label: {label}")
-    incident.reviewed_label = label
-    incident.reviewed_by = user.id
-    incident.reviewed_at = datetime.now(UTC)
-    incident.review_source = "analyst"
-    incident.status = "reviewed"
+    mark_reviewed(incident, label, user, "analyst")
     record_audit(db, user, "incident.review", "incident", incident.id, {"label": label})
     db.commit()
     return incident
@@ -108,17 +109,13 @@ def release_gold(db: Session, user: User) -> int:
     rows = list(db.scalars(select(Incident).where(
         Incident.source == "pool", Incident.status != "reviewed", Incident.gold_label.is_not(None))))
     for incident in rows:
-        incident.reviewed_label = incident.gold_label
-        incident.reviewed_by = user.id
-        incident.reviewed_at = datetime.now(UTC)
-        incident.review_source = "batch"
-        incident.status = "reviewed"
+        mark_reviewed(incident, incident.gold_label, user, "batch")
     record_audit(db, user, "incident.release_gold", "incident", None, {"count": len(rows)})
     db.commit()
     return len(rows)
 
 
-def reclassify_unreviewed(db: Session, version_id: int) -> int:
+def reclassify_unreviewed(db: Session) -> int:
     """Re-score the unreviewed queue with the champion (the new one after a promotion)."""
     rows = list(db.scalars(select(Incident).where(Incident.status.in_(UNREVIEWED))))
     for incident, result in zip(rows, classify(db, [row.text for row in rows])):
@@ -141,20 +138,15 @@ def get_incident(db: Session, incident_id: int) -> Incident | None:
     return db.get(Incident, incident_id)
 
 
-def count_by(db: Session, column, *conditions) -> dict[str, int]:
-    rows = db.execute(select(column, func.count()).where(column.is_not(None), *conditions).group_by(column))
+def count_by(db: Session, column) -> dict[str, int]:
+    rows = db.execute(select(column, func.count()).where(column.is_not(None)).group_by(column))
     return {key: count for key, count in rows}
 
 
 def incident_stats(db: Session) -> IncidentStats:
-    champion = registry.champion(db, "incident")
-    since = select(func.count()).select_from(Incident).where(Incident.review_source == "analyst")
-    if champion and champion[0].promoted_at:
-        since = since.where(Incident.reviewed_at >= champion[0].promoted_at)
     by_status = count_by(db, Incident.status)
     return IncidentStats(
         by_status=by_status,
         by_label=count_by(db, func.coalesce(Incident.reviewed_label, Incident.predicted_label)),
         needs_review=by_status.get("needs_review", 0),
-        reviews_since_champion=db.scalar(since),
     )

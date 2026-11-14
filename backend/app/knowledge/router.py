@@ -31,7 +31,3 @@ def upload_document(file: UploadFile, code: Annotated[str, Form()], title: Annot
     path.write_bytes(file.file.read())
     return jobs.start_job(db, background, "ingest", ingest.ingest_file, path, code, title, origin)
 
-
-@router.get("/stats")
-def knowledge_stats(db: DB, _: CurrentUser):
-    return search.knowledge_stats(db)

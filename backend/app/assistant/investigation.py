@@ -75,9 +75,6 @@ class Plan(BaseModel):
     actions: list[RankedAction]
 
 
-# --- nodes ---
-
-
 def intake(db: Session, state: State) -> dict:
     incident = incidents.get_incident(db, state["incident_id"])
     category = incident.reviewed_label or incident.predicted_label
@@ -170,9 +167,6 @@ def ask(db: Session, state: State, schema: type[BaseModel], instructions: str, c
     return llm.complete(db, messages, schema)
 
 
-# --- templates and validator inputs ---
-
-
 def findings_template(state: State) -> str:
     category = state["incident"]["category"]
     risk = state["risk"]
@@ -202,9 +196,6 @@ def eligible_codes(state: State) -> set[str]:
 
 def tool_outputs(state: State) -> list[dict]:
     return [state["incident"], state["scope"], state.get("risk") or {}, state["guidance"], {"rules": state["rules"]}]
-
-
-# --- graph ---
 
 
 def recorded(name: str, node: Callable[[Session, State], dict]) -> Callable:
@@ -249,9 +240,6 @@ def build_graph():
 GRAPH = build_graph()
 
 
-# --- service functions ---
-
-
 def start(db: Session, background: BackgroundTasks, incident_id: int, scope: dict, user: User) -> Investigation:
     if not incidents.get_incident(db, incident_id):
         raise HTTPException(404, "Incident not found")
@@ -277,15 +265,14 @@ def run(investigation_id: int) -> None:
             investigation.status, investigation.state = "failed", {**initial, "error": str(exc)}
             db.commit()
             return
-        if not state["stop"]:
-            state["citations"] = list(dict.fromkeys(validator.CITATION.findall(state["guidance_summary"])))
-        investigation.state, investigation.degraded = state, state["degraded"]
         if state["stop"]:
             investigation.status = "closed"
         else:
+            state["citations"] = list(dict.fromkeys(validator.CITATION.findall(state["guidance_summary"])))
             save_actions(db, investigation_id, state)
             # Nothing to approve: go straight to the report.
             investigation.status = "awaiting_approval" if eligible_codes(state) else "reporting"
+        investigation.state, investigation.degraded = state, state["degraded"]
         db.commit()
         if investigation.status == "reporting":
             write_report(db, investigation_id)
@@ -322,12 +309,10 @@ def decide(db: Session, investigation_id: int, action_id: int, decision: str, us
     return action
 
 
-def pending_actions(db: Session, investigation_id: int | None = None) -> int:
-    query = (select(func.count()).select_from(InvestigationAction)
-             .where(InvestigationAction.eligible, InvestigationAction.decision == "pending"))
-    if investigation_id is not None:
-        query = query.where(InvestigationAction.investigation_id == investigation_id)
-    return db.scalar(query)
+def pending_actions(db: Session, investigation_id: int) -> int:
+    return db.scalar(select(func.count()).select_from(InvestigationAction).where(
+        InvestigationAction.investigation_id == investigation_id, InvestigationAction.eligible,
+        InvestigationAction.decision == "pending"))
 
 
 def write_report(db: Session, investigation_id: int) -> dict:
@@ -408,8 +393,7 @@ def list_investigations(db: Session) -> list[Investigation]:
 
 def investigation_stats(db: Session) -> dict:
     by_status = db.execute(select(Investigation.status, func.count()).group_by(Investigation.status))
-    degraded = db.scalar(select(func.count()).select_from(Investigation).where(Investigation.degraded))
-    return {"by_status": dict(by_status.all()), "degraded": degraded, "pending_actions": pending_actions(db)}
+    return {"by_status": dict(by_status.all())}
 
 
 def fail_stale_runs(db: Session) -> int:

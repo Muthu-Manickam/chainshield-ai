@@ -9,7 +9,6 @@ import pandas as pd
 
 from ml.features import CATEGORICAL, order_matrix
 
-RISK_FAMILIES = ("risk_logreg", "risk_xgboost")
 TEXT_FAMILIES = ("tfidf", "bilstm", "distilbert")
 
 
@@ -28,8 +27,6 @@ class Predictor:
             from ml.text import load_model  # imports torch, which risk-only callers never need
 
             return cls(metadata, {"model": load_model(path)})
-        if metadata["family"] not in RISK_FAMILIES:
-            raise ValueError(f"unknown model family: {metadata['family']}")
         return cls(metadata, joblib.load(path / "model.joblib"))
 
     def predict_proba(self, x: pd.DataFrame | list[str]) -> np.ndarray:

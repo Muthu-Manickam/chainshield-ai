@@ -49,10 +49,6 @@ def get_investigation(db: Session, investigation_id: int) -> dict:
     return investigation.get_investigation(db, investigation_id) or {"error": "investigation not found"}
 
 
-def model_info(db: Session, task: str) -> dict:
-    return registry.model_info(db, task)
-
-
 class OrderArgs(BaseModel):
     order_id: int
 
@@ -91,7 +87,7 @@ class TaskArgs(BaseModel):
 
 def _tool(func, args: type[BaseModel]) -> StructuredTool:
     # `func` takes `db` first; the chat graph supplies it when calling `tool.func(db, **args)`.
-    return StructuredTool(name=func.__name__, description=(func.__doc__ or func.__name__.replace("_", " ")),
+    return StructuredTool(name=func.__name__, description=func.__name__.replace("_", " "),
                           args_schema=args, func=func)
 
 
@@ -103,5 +99,5 @@ TOOLS = [
     _tool(classify_text, TextArgs),
     _tool(search_guidance, QueryArgs),
     _tool(get_investigation, InvestigationArgs),
-    _tool(model_info, TaskArgs),
+    _tool(registry.model_info, TaskArgs),
 ]

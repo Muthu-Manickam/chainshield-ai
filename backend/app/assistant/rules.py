@@ -41,5 +41,4 @@ def update_rule(db: Session, rule_id: int, data: RuleUpdate, user: User) -> Acti
         setattr(rule, field, value)
     record_audit(db, user, "update_rule", "action_rule", rule.id, changes)
     db.commit()
-    db.refresh(rule)
     return rule

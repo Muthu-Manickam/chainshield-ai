@@ -6,18 +6,18 @@ from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.assistant.investigation import fail_stale_runs
+from app.assistant.models import ActionRule
 from app.core.auth import create_user
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.jobs import record_eval
 from app.core.models import EvalRun, User
 from app.core.schemas import UserCreate
-from app.signals import orders
-from app.signals.models import Order
+from app.knowledge.ingest import ingest_file
+from app.signals import incidents, orders, registry
+from app.signals.models import Incident, ModelVersion, Order
 
 log = logging.getLogger("seed")
-
-# --- B0 ---
 
 DEMO_PASSWORD = "chainshield"
 
@@ -44,8 +44,6 @@ def seed_evals(db: Session) -> None:
             record_eval(db, path.stem, name, metrics)
     log.info("evals: %d files", len(files))
 
-# --- G2 ---
-
 
 HUMANITARIAN = ["infrastructure", "affected_people", "rescue_donation", "other_relevant"]
 # Illustrative actions; costs and approvers follow the SOP-08 approval matrix (Manager limits map to admin).
@@ -70,8 +68,6 @@ ACTION_RULES = [
 
 
 def seed_action_rules(db: Session) -> None:
-    from app.assistant.models import ActionRule
-
     if db.scalar(select(exists().select_from(ActionRule))):
         log.info("action rules: already seeded")
         return
@@ -80,8 +76,6 @@ def seed_action_rules(db: Session) -> None:
     db.add_all(ActionRule(**dict(zip(fields, row, strict=True))) for row in ACTION_RULES)
     db.commit()
     log.info("action rules: %d rules", len(ACTION_RULES))
-
-# --- S1 ---
 
 
 def seed_orders(db: Session) -> None:
@@ -93,13 +87,8 @@ def seed_orders(db: Session) -> None:
     else:
         log.info("orders: %d loaded", orders.load_orders(db, path))
 
-# --- S2 ---
-
 
 def seed_incidents(db: Session) -> None:
-    from app.signals import incidents, registry
-    from app.signals.models import Incident
-
     path = settings.data_dir / "processed" / "tweets.parquet"
     if not path.exists():
         log.info("incidents: %s missing", path)
@@ -112,17 +101,12 @@ def seed_incidents(db: Session) -> None:
     else:
         log.info("incidents: %d released", len(incidents.release(db, 40)))
 
-# --- RG1 ---
-
 
 # the first model of each task becomes champion; later ones stay candidates with a gate (DistilBERT for the demo)
 SEED_MODELS = (("risk", "risk/v1"), ("incident", "text/v1-tfidf"), ("incident", "text/v1-distilbert"))
 
 
 def seed_models(db: Session) -> None:
-    from app.signals import orders, registry
-    from app.signals.models import ModelVersion, Order
-
     for task, subdir in SEED_MODELS:
         path = settings.artifacts_dir / subdir
         if not (path / "metadata.json").exists():
@@ -133,11 +117,8 @@ def seed_models(db: Session) -> None:
             version = registry.register_version(db, task, path)
             registry.store_gate(db, version)
             log.info("models: registered %s as %s v%d (%s)", subdir, task, version.version, version.status)
-    risk = db.scalar(select(ModelVersion.id).where(ModelVersion.task == "risk", ModelVersion.status == "champion"))
-    if risk and db.scalar(select(exists().where(Order.risk_score.is_(None)))):
-        log.info("models: scored %d orders", orders.score_orders(db, risk))
-
-# --- K1 ---
+    if db.scalar(select(exists().where(Order.risk_score.is_(None)))):
+        log.info("models: scored %d orders", orders.score_orders(db))
 
 
 def corpus_sources() -> list[dict]:
@@ -155,8 +136,6 @@ def corpus_sources() -> list[dict]:
 
 
 def seed_documents(db: Session) -> None:
-    from app.knowledge.ingest import ingest_file
-
     if not (settings.guidance_dir / "sources.md").exists():
         log.info("documents: no %s", settings.guidance_dir / "sources.md")
         return
@@ -166,8 +145,6 @@ def seed_documents(db: Session) -> None:
             continue
         doc = ingest_file(db, source["path"], source["code"], source["title"], source["origin"])
         log.info("documents: %s %d chunks", doc.code, doc.chunk_count)
-
-# --- main ---
 
 
 def main() -> None:

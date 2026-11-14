@@ -51,11 +51,8 @@ class RiskSummary(Schema):
 
 
 class OrderStats(Schema):
-    total: int
     by_band: dict[str, int]
-    by_market: list[dict[str, Any]]
     by_shipping_mode: list[dict[str, Any]]
-    champion_version: int | None
 
 
 class Incident(Schema):
@@ -100,7 +97,6 @@ class IncidentStats(Schema):
     by_status: dict[str, int]
     by_label: dict[str, int]
     needs_review: int
-    reviews_since_champion: int
 
 
 class ModelVersion(Schema):
@@ -120,7 +116,7 @@ class ModelVersion(Schema):
 
 
 class ReleaseBatchIn(Schema):
-    block: Literal["s1", "s2", "s3"]
+    block: Literal["s1", "s2"]
 
 
 class RetrainIn(Schema):

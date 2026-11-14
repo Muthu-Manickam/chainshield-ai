@@ -1,6 +1,9 @@
 """CLI: python -m ml prepare [orders|tweets] | train risk|text ... | evaluate risk|text ... | export-evals"""
 
 import argparse
+import json
+
+from ml.data import artifacts_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,10 +25,6 @@ def parse_args() -> argparse.Namespace:
 
 def export_evals():
     """Collect the comparison tables the Models page shows into artifacts/eval/<kind>.json."""
-    import json
-
-    from ml.data import artifacts_dir
-
     root = artifacts_dir()
     read = lambda path: json.loads(path.read_text())
     risk = read(root / "risk/v1/metrics.json")

@@ -30,14 +30,14 @@ def band(score: float, threshold: float) -> str:
     return "low" if score < threshold else "medium" if score < HIGH_SCORE else "high"
 
 
-def score_orders(db: Session, version_id: int) -> int:
-    """Score every order not yet scored by this version, in one batch."""
+def score_orders(db: Session) -> int:
+    """Score every order not yet scored by the champion, in one batch."""
     champion = registry.champion(db, "risk")
     if champion is None:
         return 0
-    predictor = champion[1]
+    version, predictor = champion
     todo = db.execute(
-        select(Order.id, Order.features).where(Order.model_version_id.is_distinct_from(version_id))
+        select(Order.id, Order.features).where(Order.model_version_id.is_distinct_from(version.id))
     ).all()
     if not todo:
         return 0
@@ -48,7 +48,7 @@ def score_orders(db: Session, version_id: int) -> int:
     db.execute(update(Order), [
         {
             "id": order_id, "risk_score": float(score), "risk_band": band(score, threshold),
-            "model_version_id": version_id,
+            "model_version_id": version.id,
             "factors": [
                 {"feature": name.split("=")[0], "value": features[name.split("=")[0]], "impact": impact}
                 for name, impact in explanation
@@ -101,24 +101,14 @@ def _groups(db: Session, column, where: list) -> list[dict]:
 def risk_summary(db: Session, filters: OrderFilter) -> RiskSummary:
     where = _where(filters)
     total, high, medium, low, mean = db.execute(
-        select(
-            func.count(),
-            func.count().filter(Order.risk_band == "high"),
-            func.count().filter(Order.risk_band == "medium"),
-            func.count().filter(Order.risk_band == "low"),
-            func.avg(Order.risk_score),
-        ).where(*where)
+        select(func.count(), *(func.count().filter(Order.risk_band == band) for band in BANDS),
+               func.avg(Order.risk_score)).where(*where)
     ).one()
     return RiskSummary(total=total, high=high, medium=medium, low=low, mean_score=mean,
                        by_shipping_mode=_groups(db, Order.shipping_mode, where))
 
 
 def order_stats(db: Session) -> OrderStats:
-    where = _where(OrderFilter())
     summary = risk_summary(db, OrderFilter())
-    champion = registry.champion(db, "risk")
-    return OrderStats(
-        total=summary.total, by_band={"low": summary.low, "medium": summary.medium, "high": summary.high},
-        by_market=_groups(db, Order.market, where), by_shipping_mode=summary.by_shipping_mode,
-        champion_version=champion[0].version if champion else None,
-    )
+    return OrderStats(by_band={"low": summary.low, "medium": summary.medium, "high": summary.high},
+                      by_shipping_mode=summary.by_shipping_mode)

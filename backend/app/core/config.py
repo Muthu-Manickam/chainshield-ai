@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     llm_budget_usd: float = 3.0
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = "https://cloud.langfuse.com"
     data_dir: Path = ROOT / "data"
     artifacts_dir: Path = ROOT / "artifacts"
     guidance_dir: Path = ROOT / "corpus"

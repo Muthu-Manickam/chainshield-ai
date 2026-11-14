@@ -51,6 +51,7 @@ class Job(Schema):
 class AuditEntry(Schema):
     id: int
     user_id: int | None
+    user_email: str | None = None
     action: str
     entity: str
     entity_id: str | None

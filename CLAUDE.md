@@ -82,7 +82,7 @@ retraining. Details: `docs/product/Product Overview.md`.
   `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` are set. `investigation_steps` stays the app's own record.
 
 ## 8. Retraining decisions
-- Trigger: admin button on the Models page (badge at 200 new reviews or a released S-batch). No scheduler.
+- Trigger: admin button on the Models page. No scheduler.
 - A `core/jobs.py` job runs `python -m ml train ...` as a subprocess; artifacts to `artifacts/<task>/v<n>/`.
 - Compare candidate vs champion on the promotion set (never the test set). Gate: primary metric no more than 0.005
   below champion, infrastructure recall not lower, Brier no more than 0.002 worse, no leakage alarm.

@@ -1,8 +1,8 @@
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.knowledge.ingest import embed
-from app.knowledge.models import Chunk, Document
+from app.knowledge.models import Document
 from app.knowledge.schemas import SearchResult
 
 # bge-small expects this instruction on queries (not on passages).
@@ -31,13 +31,13 @@ SELECT c.citation_key, d.title AS document_title, c.section, c.text, f.score,
        (SELECT 1 - min(c2.embedding <=> q.e) FROM chunks c2 JOIN dense USING (id)) AS best_score
 FROM fused f JOIN chunks c USING (id) JOIN documents d ON d.id = c.document_id, q
 ORDER BY f.score DESC
-LIMIT :k
+LIMIT 5
 """)
 
 
-def search(db: Session, query: str, k: int = 5) -> SearchResult:
+def search(db: Session, query: str) -> SearchResult:
     [embedding] = embed([QUERY_PREFIX + query])
-    rows = db.execute(HYBRID_SQL, {"embedding": str(embedding), "query": query, "rrf_k": RRF_K, "k": k}).mappings().all()
+    rows = db.execute(HYBRID_SQL, {"embedding": str(embedding), "query": query, "rrf_k": RRF_K}).mappings().all()
     best = rows[0]["best_score"] if rows else None
     chunks = [{key: row[key] for key in ("citation_key", "document_title", "section", "text", "score")} for row in rows]
     return SearchResult(chunks=chunks, evidence_gap=best is None or best < EVIDENCE_GAP_THRESHOLD, best_score=best)
@@ -46,8 +46,3 @@ def search(db: Session, query: str, k: int = 5) -> SearchResult:
 def list_documents(db: Session) -> list[Document]:
     return list(db.scalars(select(Document).order_by(Document.code)))
 
-
-def knowledge_stats(db: Session) -> dict:
-    by_origin = dict(db.execute(select(Document.origin, func.count()).group_by(Document.origin)).all())
-    return {"documents": sum(by_origin.values()), "chunks": db.scalar(select(func.count()).select_from(Chunk)),
-            "by_origin": by_origin}
