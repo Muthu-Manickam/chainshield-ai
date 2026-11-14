@@ -96,4 +96,5 @@ retraining. Details: `docs/product/Product Overview.md`.
 | Date | Decision | By |
 |---|---|---|
 | 2026-11-15 | Initial decisions above | orchestrator |
+| 2026-11-15 | Host ports 5432 and 8000 are taken: compose publishes db on 55432, api on 18800, web on 18080. Docker images install CPU-only torch (`--index-url https://download.pytorch.org/whl/cpu`). RAG documents live in `corpus/` (SOPs, sources, questions) and `data/corpus/public/` (downloads). | orchestrator |
 | 2026-11-15 | LLM provider: OpenRouter, gpt-6-luna primary, claude-haiku-5.5 fallback, $3 app budget | owner |

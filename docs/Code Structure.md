@@ -18,7 +18,8 @@ chainshield-ai/
   backend/                  FastAPI app (serving, API, agents)
   ml/                       offline training package (no DB, no web)
   frontend/                 React app
-  data/                     git-ignored: raw/, processed/
+  corpus/                   RAG: sops/*.md (team-authored), sources.md, questions.md (eval set)
+  data/                     git-ignored: raw/, processed/, corpus/public/ (downloaded guidance)
   artifacts/                git-ignored: <task>/v<n>/ model files + metrics.json
   docs/                     this Obsidian vault
 ```

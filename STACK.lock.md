@@ -72,7 +72,7 @@ HNSW index. Keyword search with Postgres full-text (`tsvector`). LLM cache is a 
 | Embeddings | `sentence-transformers` (`BAAI/bge-small-en-v1.5`) | 6.3.0 |
 | PDF text | `pypdf` | 7.1.0 |
 | Agents | `langgraph` | 1.2.22 |
-| LLM client | `langchain-openai` → OpenRouter | 1.8.0 |
+| LLM client | `langchain-openai` → OpenRouter, `langchain-core`, `langchain-text-splitters` | 1.8.0 / 1.8.0 / 1.1.3 |
 | LLM models | OpenRouter: `openai/gpt-6-luna` ($0.10/$0.50 per M), fallback `anthropic/claude-haiku-5.5`; app budget $3 | |
 | Tracing | `langfuse` (cloud Hobby, LangChain callback) | 5.2.0 |
 

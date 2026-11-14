@@ -1,0 +1,50 @@
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg18
+    environment:
+      POSTGRES_USER: chainshield
+      POSTGRES_PASSWORD: chainshield
+      POSTGRES_DB: chainshield
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chainshield"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://chainshield:chainshield@db:5432/chainshield
+      DATA_DIR: /app/data
+      ARTIFACTS_DIR: /app/artifacts
+      GUIDANCE_DIR: /app/corpus
+      HF_HOME: /hf
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./corpus:/app/corpus:ro
+      - hfcache:/hf
+    ports:
+      - "18800:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --workers 1"
+
+  web:
+    build: frontend
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "18080:4173"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  hfcache:
