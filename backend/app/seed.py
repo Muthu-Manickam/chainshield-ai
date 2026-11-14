@@ -169,7 +169,7 @@ def seed_documents(db: Session) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
-    steps = (seed_users, seed_action_rules, seed_orders, seed_incidents, seed_models, seed_documents, seed_evals,
+    steps = (seed_users, seed_action_rules, seed_orders, seed_models, seed_incidents, seed_documents, seed_evals,
              fail_stale_runs)
     with SessionLocal() as db:
         for step in steps:
