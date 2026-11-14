@@ -21,3 +21,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+# obsidian per-device state
+docs/.obsidian/workspace*.json
+docs/.obsidian/cache
+docs/.trash/

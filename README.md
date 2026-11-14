@@ -4,4 +4,5 @@ Agentic supply-chain intelligence platform: shipment risk prediction, disaster-r
 classification, retrieval-augmented guidance, and a multi-agent investigation workflow with dashboards.
 
 - Locked tech stack: [STACK.lock.md](STACK.lock.md)
-- Research and reviews: [docs/research](docs/research)
+- Project knowledge base (Obsidian vault): open the `docs/` folder in Obsidian, start at [docs/Home.md](docs/Home.md).
+  Decisions, modules, features, dashboards, datasets and research are tracked there.
