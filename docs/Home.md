@@ -15,5 +15,6 @@ updated: 2026-11-15
 ## Tech stack
 - [[Tech Stack]]: the locked stack with exact versions
 - [[Decisions]]: why each stack choice was made (ADR-001 to ADR-009)
+- [[Code Structure]]: locked folders, files and patterns every sub-agent follows
 
 New decision: copy `templates/Decision.md` into `decisions/` and add it to [[Decisions]].
