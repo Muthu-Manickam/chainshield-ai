@@ -1,4 +1,4 @@
-"""CLI: python -m ml prepare [orders|tweets] | train risk|text ... | evaluate risk|text ..."""
+"""CLI: python -m ml prepare [orders|tweets] | train risk|text ... | evaluate risk|text ... | export-evals"""
 
 import argparse
 
@@ -16,12 +16,35 @@ def parse_args() -> argparse.Namespace:
     commands.choices["train"].add_argument("--extra", default="", help="risk: extra blocks, e.g. s1,s2")
     commands.choices["train"].add_argument("--extra-labels", help="text: parquet of reviewed labels")
     commands.choices["evaluate"].add_argument("--final", action="store_true", help="score the sealed test set")
+    commands.add_parser("export-evals", help="write artifacts/eval/*.json comparison tables for the app")
     return parser.parse_args()
+
+
+def export_evals():
+    """Collect the comparison tables the Models page shows into artifacts/eval/<kind>.json."""
+    import json
+
+    from ml.data import artifacts_dir
+
+    root = artifacts_dir()
+    read = lambda path: json.loads(path.read_text())
+    risk = read(root / "risk/v1/metrics.json")
+    tables = {
+        "risk_models": {model: {split: risk[split][model] for split in risk} for model in risk["val"]},
+        "incident_models": {path.name.split("-", 1)[1]: read(path / "metrics.json") for path in root.glob("text/v1-*")},
+        "incident_folds": {path.stem: read(path) for path in [*root.glob("text/loeo-*.json"), root / "text/cascade.json"]},
+    }
+    (root / "eval").mkdir(exist_ok=True)
+    for kind, table in tables.items():
+        (root / "eval" / f"{kind}.json").write_text(json.dumps(table, indent=2))
+        print(f"eval/{kind}.json: {len(table)} rows")
 
 
 def main():
     args = parse_args()
-    if args.command == "prepare":
+    if args.command == "export-evals":
+        export_evals()
+    elif args.command == "prepare":
         from ml import data
 
         if args.dataset in (None, "tweets"):
