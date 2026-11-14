@@ -2,6 +2,8 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://chainshield:chainshield@localhost:55432/cs_b0")
 os.environ["LLM_MODE"] = "replay"
+# macOS: torch and xgboost each bring an OpenMP runtime; one thread keeps them from crashing each other.
+os.environ["OMP_NUM_THREADS"] = "1"
 
 from pathlib import Path
 

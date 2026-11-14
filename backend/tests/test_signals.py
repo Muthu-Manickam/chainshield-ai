@@ -14,9 +14,7 @@ from tests.conftest import login_as
 
 
 @pytest.fixture
-def risk_predictor(monkeypatch):
-    # macOS: xgboost segfaults on load once torch (imported via ml.text) has started its own OpenMP runtime
-    monkeypatch.setenv("OMP_NUM_THREADS", "1")
+def risk_predictor():
     return Predictor.load(settings.artifacts_dir / "risk" / "v1")
 
 
