@@ -265,9 +265,110 @@ def test_rg1_seed_models_registers_both_champions_once(db):
     seed_models(db)
     versions = registry.list_versions(db, None)
     assert [(v.task, v.family, v.status) for v in versions] == [
-        ("incident", "tfidf", "champion"), ("risk", "risk_xgboost", "champion")]
+        ("incident", "distilbert", "candidate"), ("incident", "tfidf", "champion"), ("risk", "risk_xgboost", "champion")]
+    assert set(versions[0].gate["checks"]) == {"macro_f1", "infrastructure_recall"}
     _, model = registry.champion(db, "incident")
     assert model.predict_proba(["the bridge collapsed after the flood"]).shape == (1, 5)
-    assert registry.model_info(db, "incident")["versions"] == 1
+    assert registry.model_info(db, "incident")["versions"] == 2
 
 # --- RG2 ---
+
+import json
+import shutil
+import subprocess
+
+
+@pytest.fixture
+def artifacts(tmp_path, monkeypatch):
+    root = tmp_path / "artifacts"
+    shutil.copytree(RISK_V1, root / "risk" / "v1")
+    shutil.copytree(settings.artifacts_dir / "text" / "v1-tfidf", root / "text" / "v1-tfidf")
+    monkeypatch.setattr(settings, "artifacts_dir", root)
+    monkeypatch.setattr(registry, "_cache", {})
+    return root
+
+
+def fake_ml(monkeypatch, source=None, out=None, edit=None, returncode=0) -> list:
+    """Stands in for the `python -m ml train` subprocess: copies `source` to `out` and edits its metrics."""
+    calls = []
+
+    def run(command, **kwargs):
+        labels = pd.read_parquet(command[command.index("--extra-labels") + 1]) if "--extra-labels" in command else None
+        calls.append((command, labels))
+        if returncode == 0:
+            shutil.copytree(source, out)
+            metrics = json.loads((out / "metrics.json").read_text())
+            edit(metrics)
+            (out / "metrics.json").write_text(json.dumps(metrics))
+        return subprocess.CompletedProcess(command, returncode, "trained", "boom")
+
+    monkeypatch.setattr(registry.subprocess, "run", run)
+    return calls
+
+
+def run_retrain(client, task: str, family: str) -> dict:
+    job = client.post("/api/models/retrain", json={"task": task, "family": family}).json()
+    return client.get(f"/api/jobs/{job['id']}").json()
+
+
+def test_rg2_release_retrain_promote_and_rollback(db, client, orders_parquet, artifacts, monkeypatch):
+    orders.load_orders(db, orders_parquet)
+    v1 = registry.register_version(db, "risk", artifacts / "risk" / "v1")
+    orders.score_orders(db, v1.id)
+    login_as(client, "admin")
+    assert client.post("/api/models/release-batch", json={"block": "s3"}).status_code == 400
+    assert client.post("/api/models/release-batch", json={"block": "s1"}).json() == {"released": 1000}
+
+    def worse_pr_auc(metrics):
+        metrics["s3"]["xgboost"]["pr_auc"] -= 0.01
+
+    calls = fake_ml(monkeypatch, artifacts / "risk" / "v1", artifacts / "risk" / "v2", worse_pr_auc)
+    job = run_retrain(client, "risk", "xgb")
+    assert job["status"] == "done", job["error"]
+    assert calls[0][0][3:] == ["train", "risk", "--version", "2", "--extra", "s1"]
+    v2 = db.get(ModelVersion, job["result"]["version_id"])
+    assert (v2.status, v2.gate["passed"], v2.snapshot_hash is not None) == ("candidate", False, True)
+    assert v2.gate["checks"] == {"pr_auc": False, "brier": True, "no_leakage_alarm": True}
+
+    assert client.post(f"/api/models/{v2.id}/promote").json()["status"] == "champion"
+    db.expire_all()
+    assert db.get(ModelVersion, v1.id).status == "retired"
+    assert set(db.scalars(select(Order.model_version_id))) == {v2.id}
+    audit = db.scalars(select(AuditLog).where(AuditLog.action == "model.promote")).one()
+    assert audit.detail["gate_passed"] is False
+
+    client.post(f"/api/models/{v1.id}/promote")
+    db.expire_all()
+    assert set(db.scalars(select(Order.model_version_id))) == {v1.id}
+    assert db.get(ModelVersion, v2.id).status == "retired"
+
+
+def test_rg2_crashed_training_fails_the_job(client, artifacts, monkeypatch):
+    login_as(client, "admin")
+    fake_ml(monkeypatch, returncode=1)
+    job = run_retrain(client, "risk", "xgb")
+    assert job["status"] == "failed" and "boom" in job["error"]
+
+
+def test_rg2_text_retrain_uses_reviews_and_reclassifies_on_promote(db, client, artifacts, monkeypatch):
+    registry.register_version(db, "incident", artifacts / "text" / "v1-tfidf")
+    db.add_all([
+        Incident(tweet_id="7", text="bridge down", source="pool", status="reviewed", reviewed_label="infrastructure"),
+        Incident(text="the bridge collapsed after the flood", source="manual", status="classified"),
+    ])
+    db.commit()
+    login_as(client, "admin")
+
+    def lower_infrastructure_recall(metrics):
+        metrics["pool_holdout"]["per_class_recall"]["infrastructure"] -= 0.1
+
+    tfidf = artifacts / "text" / "v1-tfidf"
+    calls = fake_ml(monkeypatch, tfidf, artifacts / "text" / "v2-tfidf", lower_infrastructure_recall)
+    job = run_retrain(client, "incident", "tfidf")
+    assert job["status"] == "done", job["error"]
+    assert calls[0][1].to_dict("records") == [{"tweet_id": "7", "category": "infrastructure"}]
+    assert job["result"]["gate"]["checks"] == {"macro_f1": True, "infrastructure_recall": False}
+
+    client.post(f"/api/models/{job['result']['version_id']}/promote")
+    manual = db.scalar(select(Incident).where(Incident.source == "manual"))
+    assert manual.model_version_id == job["result"]["version_id"] and manual.predicted_label in CLASSES

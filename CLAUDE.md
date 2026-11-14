@@ -85,7 +85,7 @@ retraining. Details: `docs/product/Product Overview.md`.
 - Trigger: admin button on the Models page (badge at 200 new reviews or a released S-batch). No scheduler.
 - A `core/jobs.py` job runs `python -m ml train ...` as a subprocess; artifacts to `artifacts/<task>/v<n>/`.
 - Compare candidate vs champion on the promotion set (never the test set). Gate: primary metric no more than 0.005
-  below champion, infrastructure recall not lower, Brier not worse, no leakage alarm.
+  below champion, infrastructure recall not lower, Brier no more than 0.002 worse, no leakage alarm.
 - Admin promotes; champion hot-reloads; rollback = promote an older version. Every score stores its version id.
 
 ## 9. Verification

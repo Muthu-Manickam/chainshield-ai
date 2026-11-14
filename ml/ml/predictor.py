@@ -10,6 +10,7 @@ import pandas as pd
 from ml.features import CATEGORICAL, order_matrix
 
 RISK_FAMILIES = ("risk_logreg", "risk_xgboost")
+TEXT_FAMILIES = ("tfidf", "bilstm", "distilbert")
 
 
 class Predictor:
@@ -23,12 +24,18 @@ class Predictor:
     def load(cls, path) -> "Predictor":
         path = Path(path)
         metadata = json.loads((path / "metadata.json").read_text())
+        if metadata["family"] in TEXT_FAMILIES:
+            from ml.text import load_model  # imports torch, which risk-only callers never need
+
+            return cls(metadata, {"model": load_model(path)})
         if metadata["family"] not in RISK_FAMILIES:
             raise ValueError(f"unknown model family: {metadata['family']}")
         return cls(metadata, joblib.load(path / "model.joblib"))
 
-    def predict_proba(self, x: pd.DataFrame) -> np.ndarray:
-        """Class probabilities, one column per entry in `classes`."""
+    def predict_proba(self, x: pd.DataFrame | list[str]) -> np.ndarray:
+        """Class probabilities, one column per entry in `classes`; text models take a list of raw texts."""
+        if self.family in TEXT_FAMILIES:
+            return self.payload["model"].predict_proba(x)
         matrix, _ = order_matrix(x, self.metadata["categories"])
         return self.payload["model"].predict_proba(matrix)
 

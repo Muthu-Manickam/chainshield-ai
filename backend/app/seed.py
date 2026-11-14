@@ -115,21 +115,24 @@ def seed_incidents(db: Session) -> None:
 # --- RG1 ---
 
 
-SEED_MODELS = {"risk": "risk/v1", "incident": "text/v1-tfidf"}
+# the first model of each task becomes champion; later ones stay candidates with a gate (DistilBERT for the demo)
+SEED_MODELS = (("risk", "risk/v1"), ("incident", "text/v1-tfidf"), ("incident", "text/v1-distilbert"))
 
 
 def seed_models(db: Session) -> None:
     from app.signals import orders, registry
     from app.signals.models import ModelVersion, Order
 
-    for task, subdir in SEED_MODELS.items():
+    for task, subdir in SEED_MODELS:
         path = settings.artifacts_dir / subdir
         if not (path / "metadata.json").exists():
             log.info("models: no artifact in %s", path)
         elif db.scalar(select(exists().where(ModelVersion.artifact_path == str(path)))):
             log.info("models: %s already registered", subdir)
         else:
-            log.info("models: registered %s as %s v%d", subdir, task, registry.register_version(db, task, path).version)
+            version = registry.register_version(db, task, path)
+            registry.store_gate(db, version)
+            log.info("models: registered %s as %s v%d (%s)", subdir, task, version.version, version.status)
     risk = db.scalar(select(ModelVersion.id).where(ModelVersion.task == "risk", ModelVersion.status == "champion"))
     if risk and db.scalar(select(exists().where(Order.risk_score.is_(None)))):
         log.info("models: scored %d orders", orders.score_orders(db, risk))
