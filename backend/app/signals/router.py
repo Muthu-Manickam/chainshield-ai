@@ -61,7 +61,10 @@ def incident_stats(db: DB, _: CurrentUser):
 
 @router.post("/incidents/{incident_id}/review", response_model=schemas.Incident)
 def review_incident(incident_id: int, data: schemas.ReviewIn, db: DB, user: CurrentUser):
-    incident = incidents.review(db, incident_id, data.label, user)
+    try:
+        incident = incidents.review(db, incident_id, data.label, user)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
     if not incident:
         raise HTTPException(404, "Incident not found")
     return incident

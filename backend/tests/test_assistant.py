@@ -434,3 +434,57 @@ def test_g3_llm_error_and_foreign_session(client, db, monkeypatch):
     assert client.post("/api/chat", json={"session_id": session_id, "message": "hi"}).status_code == 404
 
 # --- X1 ---
+from datetime import UTC
+
+from app.signals.models import Order as X1Order
+
+
+def _x1_world(db, monkeypatch) -> int:
+    """Real rules, incident and orders; only guidance search and the LLM are scripted."""
+    seed_action_rules(db)
+    incident = G1Incident(text="Port closed after the storm", source="pool", status="classified",
+                          predicted_label="infrastructure", confidence=0.9)
+    db.add(incident)
+    db.add_all(X1Order(order_id=n, order_date=datetime(2017, 1, 1, tzinfo=UTC), market="LATAM",
+                       order_region="South America", shipping_mode="Standard Class", customer_segment="Consumer",
+                       order_total=100.0, item_count=1, features={}, block="s1", risk_score=0.9, risk_band="high")
+               for n in range(1, 7))
+    db.commit()
+    monkeypatch.setattr(investigation.search, "search", lambda db, query, k=5: G1Search(chunks=[G1Chunk(
+        citation_key="SOP-03#1", document_title="Port closure SOP", section="Steps", text="Divert.", score=0.8)],
+        evidence_gap=False, best_score=0.8))
+
+    def complete(db, messages, schema):
+        if schema is investigation.Plan:
+            codes = [line[2:].split(":")[0] for line in messages[1][1].splitlines() if line.startswith("- ")]
+            return investigation.Plan(actions=[investigation.RankedAction(rule_code=c, rationale="Fits the scope.")
+                                               for c in codes])
+        summary = "6 of 6 orders in scope are high risk." if schema is investigation.Findings else \
+            "Check the port status and divert if needed [SOP-03#1]."
+        return schema(summary=summary)
+
+    monkeypatch.setattr(investigation.llm, "complete", complete)
+    return incident.id
+
+
+def test_x1_combined_journey_start_approve_reject_report(client, db, monkeypatch):
+    incident_id = _x1_world(db, monkeypatch)
+    login_as(client, "analyst")
+    started = client.post("/api/investigations", json={
+        "incident_id": incident_id, "scope": {"market": "LATAM", "shipping_mode": "Standard Class"}}).json()
+    detail = client.get(f"/api/investigations/{started['id']}").json()
+    assert detail["status"] == "awaiting_approval" and detail["degraded"] is False
+    assert detail["state"]["citations"] == ["SOP-03#1"] and "6 of 6" in detail["state"]["findings"]
+    eligible = [a for a in detail["actions"] if a["eligible"]]
+    assert {a["rule_code"] for a in eligible} == {r[0] for r in ACTION_RULES}
+
+    login_as(client, "supervisor")
+    url = f"/api/investigations/{detail['id']}/actions/{{}}/decision"
+    for n, action in enumerate(eligible):
+        decision = "approved" if n == 0 else "rejected"
+        assert client.post(url.format(action["id"]), json={"decision": decision}).status_code == 200
+    detail = client.get(f"/api/investigations/{detail['id']}").json()
+    assert detail["status"] == "completed" and detail["degraded"] is False
+    assert "[SOP-03#1]" in detail["report"] and investigation.DISCLAIMER in detail["report"]
+    assert "Automatic checks flagged" not in detail["report"]
+    assert client.get("/api/investigations/stats").json()["by_status"] == {"completed": 1}

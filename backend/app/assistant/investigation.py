@@ -50,6 +50,7 @@ class State(TypedDict, total=False):
     findings: str
     guidance: dict
     guidance_summary: str
+    citations: list[str]  # keys cited in guidance_summary; the UI shows them as badges
     rules: list[dict]
     plan: list[dict]
     errors: list[str]
@@ -108,7 +109,9 @@ def intelligence(db: Session, state: State) -> dict:
 
 
 def knowledge(db: Session, state: State) -> dict:
-    query = f"{state['incident']['category'].replace('_', ' ')}: {state['incident']['text']}"
+    # Phrased as a question: the evidence-gap threshold was tuned on questions, and a bare tweet scores lower.
+    query = f"What should we do about a {state['incident']['category'].replace('_', ' ')} incident: " \
+            f"{state['incident']['text']}"
     try:
         result = search.search(db, query)
     except Exception as exc:  # noqa: BLE001
@@ -274,6 +277,8 @@ def run(investigation_id: int) -> None:
             investigation.status, investigation.state = "failed", {**initial, "error": str(exc)}
             db.commit()
             return
+        if not state["stop"]:
+            state["citations"] = list(dict.fromkeys(validator.CITATION.findall(state["guidance_summary"])))
         investigation.state, investigation.degraded = state, state["degraded"]
         if state["stop"]:
             investigation.status = "closed"
@@ -357,7 +362,7 @@ def render_report(investigation: Investigation, actions: list[InvestigationActio
         "## Decisions",
         *(f"- **{a.name}**: {a.decision}. {a.rationale or a.reason}" for a in chosen),
         "", "## Actions rejected by rules",
-        *(f"- {a.name}: {a.reason}" for a in actions if not a.eligible),
+        *([f"- {a.name}: {a.reason}" for a in actions if not a.eligible] or ["- None"]),
         "", "## Gaps", *([f"- {gap}" for gap in state["gaps"].values()] or ["- None"]),
         "", "---", f"*{DISCLAIMER}*",
     ]
