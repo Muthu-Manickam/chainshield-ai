@@ -78,7 +78,8 @@ HNSW index. Keyword search with Postgres full-text (`tsvector`). LLM cache is a 
 | PDF text | `pypdf` | 7.1.0 |
 | Agents | `langgraph` | 1.2.22 |
 | LLM client | `langchain-openai` → OpenRouter | 1.8.0 |
-| LLM models | `anthropic/claude-haiku-5.5`, fallback `openai/gpt-5-mini` | |
+| LLM models | Provider pending owner choice (OpenRouter or approved LiteLLM proxy); budget $3 | |
+| Tracing | `langfuse` (cloud Hobby, LangChain callback) | 5.2.0 |
 
 ## Dev tools
 
@@ -86,6 +87,6 @@ HNSW index. Keyword search with Postgres full-text (`tsvector`). LLM cache is a 
 
 ## Not used
 
-Next.js, Turborepo, pnpm, Redis, Celery, separate vector DB, MLflow, tracing SaaS, form/validation libraries,
+Next.js, Turborepo, pnpm, Redis, Celery, separate vector DB, MLflow, LangSmith, form/validation libraries,
 table libraries, codegen, E2E test frameworks, CI pipelines, cloud hosting.
 Add any of them later only if a real need appears.

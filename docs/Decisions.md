@@ -14,3 +14,4 @@ type: index
 | [[ADR-007 LangGraph and OpenRouter]] | Agents use LangGraph 1.2; LLM calls go to OpenRouter through langchain-openai. | accepted |
 | [[ADR-008 TypeScript 5.9]] | Pin TypeScript 5.9.3, not 7.x. | accepted |
 | [[ADR-009 Code and UI principles]] | Modern, single-theme UI and minimal, human-written code, kept lean by two mid-build checkpoints and one final review-and-removal pass. | accepted |
+| [[ADR-010 Langfuse tracing]] | Trace every agent run and LLM call with Langfuse (cloud, free Hobby tier). | accepted |

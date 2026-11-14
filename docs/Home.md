@@ -12,9 +12,12 @@ updated: 2026-11-15
 - [[Alignment with Proposal and Tracker]]: mapping to the PDF and XLSX
 - [[Module Design]]: the 6 modules (proposed)
 
+## Agents
+- `CLAUDE.md` in the repo root: the decisions every coding agent reads first and appends to
+
 ## Tech stack
 - [[Tech Stack]]: the locked stack with exact versions
-- [[Decisions]]: why each stack choice was made (ADR-001 to ADR-009)
+- [[Decisions]]: why each stack choice was made (ADR-001 to ADR-010)
 - [[Code Structure]]: locked folders, files and patterns every sub-agent follows
 
 New decision: copy `templates/Decision.md` into `decisions/` and add it to [[Decisions]].
