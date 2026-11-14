@@ -24,7 +24,7 @@ chainshield/
   frontend/          React + TypeScript (Vite)
   backend/           FastAPI app, ML inference, agents, migrations
   ml/                training notebooks/scripts (Colab/Kaggle)
-  docker-compose.yml Postgres only (frontend and backend run locally)
+  docker-compose.yml db (Postgres + pgvector), api (FastAPI), web (React build served by Vite preview)
   data/ artifacts/   git-ignored (datasets, model weights)
 ```
 
@@ -54,6 +54,7 @@ Runs on Node 22.12 (already installed). npm, no pnpm.
 | API | `fastapi`, `uvicorn` | 0.163.0 / 0.54.0 |
 | Settings, validation | `pydantic`, `pydantic-settings` | 2.14.3 / 2.16.3 |
 | Database | `sqlalchemy` (sync), `psycopg[binary]`, `alembic`, `pgvector` | 2.1.8 / 3.3.9 / 1.20.1 / 0.5.1 |
+| Uploads, tests | `python-multipart`, `httpx` (tests only) | 0.0.33 / 0.28.1 |
 | Auth | `pwdlib[argon2]`, `pyjwt` | 0.4.0 / 2.15.1 |
 
 Auth: email + password, JWT in an httpOnly cookie, roles `analyst`, `supervisor`, `admin`.
@@ -86,5 +87,5 @@ HNSW index. Keyword search with Postgres full-text (`tsvector`). LLM cache is a 
 ## Not used
 
 Next.js, Turborepo, pnpm, Redis, Celery, separate vector DB, MLflow, tracing SaaS, form/validation libraries,
-table libraries, codegen, E2E test frameworks, CI pipelines, Docker for app services, cloud hosting.
+table libraries, codegen, E2E test frameworks, CI pipelines, cloud hosting.
 Add any of them later only if a real need appears.
