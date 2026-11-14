@@ -52,8 +52,8 @@ def send_chat(data: schemas.ChatIn, db: DB, user: CurrentUser):
 
 
 @router.get("/chat/{session_id}", response_model=list[schemas.ChatMessage])
-def chat_history(session_id: str, db: DB, _: CurrentUser):
-    return chat.history(db, session_id)
+def chat_history(session_id: str, db: DB, user: CurrentUser):
+    return chat.history(db, session_id, user)
 
 
 @router.get("/rules", response_model=list[schemas.ActionRule])

@@ -217,7 +217,220 @@ def test_t1_tools_are_bindable_and_read_only():
     assert tools.TOOLS[0].args_schema.model_json_schema()["required"] == ["order_id"]
 
 # --- G1 ---
+import asyncio
+
+from app.assistant import investigation
+from app.assistant.models import Investigation as G1Investigation
+from app.assistant.schemas import RuleResult as G1Rule
+from app.knowledge.schemas import Chunk as G1Chunk
+from app.knowledge.schemas import SearchResult as G1Search
+from app.signals.models import Incident as G1Incident
+
+G1_RULES = [
+    G1Rule(rule_code="REROUTE", name="Reroute", eligible=True, reason="All conditions met",
+           approval_role="supervisor", cost_usd=500),
+    G1Rule(rule_code="HOLD", name="Hold shipment", eligible=True, reason="All conditions met",
+           approval_role="admin", cost_usd=10000),
+    G1Rule(rule_code="PORT", name="Alternate port", eligible=False, reason="Needs at least 20 high-risk orders",
+           approval_role="supervisor", cost_usd=2000),
+]
+G1_GOOD = {
+    investigation.Findings: investigation.Findings(summary="12 of the 40 orders in scope are high risk."),
+    investigation.GuidanceSummary: investigation.GuidanceSummary(summary="Reroute away from closed roads [SOP-01#2]."),
+    investigation.Plan: investigation.Plan(actions=[investigation.RankedAction(rule_code="REROUTE",
+                                                                               rationale="12 orders are high risk.")]),
+}
+
+
+def _g1_setup(db, monkeypatch, label="infrastructure", status="classified", answers=G1_GOOD) -> int:
+    """One incident and fake services; `answers` maps an LLM schema to its reply (an exception is raised)."""
+    incident = G1Incident(text="Bridge collapsed on the main highway", source="pool", status=status,
+                          predicted_label=label, confidence=0.9)
+    db.add(incident)
+    db.commit()
+    monkeypatch.setattr(investigation.incidents, "get_incident", lambda db, incident_id: db.get(G1Incident,
+                                                                                                incident_id))
+    monkeypatch.setattr(investigation.orders, "risk_summary", lambda db, filters: G2Summary(
+        total=40, high=12, medium=18, low=10, mean_score=0.55, by_shipping_mode=[]))
+    monkeypatch.setattr(investigation.search, "search", lambda db, query, k=5: G1Search(chunks=[G1Chunk(
+        citation_key="SOP-01#2", document_title="Road closure SOP", section="Steps", text="Reroute.", score=0.8)],
+        evidence_gap=False, best_score=0.8))
+    monkeypatch.setattr(investigation.rules, "check", lambda db, category, summary, gap: G1_RULES)
+
+    def complete(db, messages, schema):
+        if isinstance(answers, Exception):
+            raise answers
+        return answers[schema]
+
+    monkeypatch.setattr(investigation.llm, "complete", complete)
+    return incident.id
+
+
+def _g1_start(client, incident_id) -> dict:
+    response = client.post("/api/investigations", json={"incident_id": incident_id,
+                                                        "scope": {"market": "LATAM", "shipping_mode": None}})
+    assert response.status_code == 200, response.text
+    return client.get(f"/api/investigations/{response.json()['id']}").json()
+
+
+def test_g1_run_ends_awaiting_approval_with_steps_actions_and_stream(client, db, monkeypatch):
+    login_as(client, "analyst")
+    detail = _g1_start(client, _g1_setup(db, monkeypatch))
+    assert detail["status"] == "awaiting_approval" and detail["degraded"] is False
+    assert [s["node"] for s in detail["steps"]] == ["intake", "intelligence", "knowledge", "planning", "validator"]
+    assert detail["state"]["findings"] == "12 of the 40 orders in scope are high risk."
+    actions = {a["rule_code"]: a for a in detail["actions"]}
+    assert actions["REROUTE"]["rank"] == 1 and actions["HOLD"]["rank"] is None
+    assert actions["PORT"]["eligible"] is False and actions["PORT"]["reason"].startswith("Needs")
+
+    async def collect():
+        return [event async for event in investigation.stream_steps(detail["id"])]
+
+    events = asyncio.run(collect())
+    assert len(events) == 6 and events[-1] == 'data: {"type": "done"}\n\n'
+
+
+def test_g1_validator_failure_retries_once_then_uses_templates(client, db, monkeypatch):
+    bad = {**G1_GOOD, investigation.Findings: investigation.Findings(summary="99 orders will be late.")}
+    login_as(client, "analyst")
+    detail = _g1_start(client, _g1_setup(db, monkeypatch, answers=bad))
+    assert detail["status"] == "awaiting_approval" and detail["degraded"] is True
+    assert [s["node"] for s in detail["steps"]].count("validator") == 2
+    assert detail["state"]["findings"].startswith("Incident classified as infrastructure")
+
+
+def test_g1_llm_error_degrades_to_templates(client, db, monkeypatch):
+    login_as(client, "analyst")
+    detail = _g1_start(client, _g1_setup(db, monkeypatch, answers=llm.LLMError("no cache")))
+    assert detail["status"] == "awaiting_approval" and detail["degraded"] is True
+    assert detail["state"]["guidance_summary"] == "Relevant guidance: Road closure SOP [SOP-01#2]"
+    assert len(detail["steps"]) == 5
+
+
+@pytest.mark.parametrize(("label", "status"), [("not_humanitarian", "classified"), ("infrastructure",
+                                                                                     "needs_review")])
+def test_g1_intake_closes_not_humanitarian_and_unreviewed(client, db, monkeypatch, label, status):
+    login_as(client, "analyst")
+    detail = _g1_start(client, _g1_setup(db, monkeypatch, label=label, status=status))
+    assert detail["status"] == "closed" and [s["node"] for s in detail["steps"]] == ["intake"]
+    assert detail["actions"] == []
+
+
+def test_g1_tool_error_is_a_gap(client, db, monkeypatch):
+    incident_id = _g1_setup(db, monkeypatch)
+
+    def broken(db, query, k=5):
+        raise RuntimeError("search down")
+
+    monkeypatch.setattr(investigation.search, "search", broken)
+    login_as(client, "analyst")
+    detail = _g1_start(client, incident_id)
+    assert detail["status"] == "awaiting_approval"
+    assert detail["state"]["gaps"] == {"guidance": "Guidance search failed (RuntimeError)."}
+    assert detail["state"]["guidance_summary"] == investigation.NO_GUIDANCE
+
+
+def test_g1_decisions_check_roles_then_write_a_validated_report(client, db, monkeypatch):
+    login_as(client, "analyst")
+    detail = _g1_start(client, _g1_setup(db, monkeypatch))
+    actions = {a["rule_code"]: a["id"] for a in detail["actions"]}
+    url = f"/api/investigations/{detail['id']}/actions/{{}}/decision"
+    assert client.post(url.format(actions["REROUTE"]), json={"decision": "approved"}).status_code == 403
+    login_as(client, "supervisor")
+    assert client.post(url.format(actions["REROUTE"]), json={"decision": "approved"}).status_code == 200
+    assert client.post(url.format(actions["REROUTE"]), json={"decision": "rejected"}).status_code == 409
+    assert client.post(url.format(actions["PORT"]), json={"decision": "approved"}).status_code == 409
+    assert client.post(url.format(actions["HOLD"]), json={"decision": "approved"}).status_code == 403
+    login_as(client, "admin")
+    assert client.post(url.format(actions["HOLD"]), json={"decision": "rejected"}).status_code == 200
+    detail = client.get(f"/api/investigations/{detail['id']}").json()
+    assert detail["status"] == "completed" and detail["degraded"] is False
+    report = detail["report"]
+    assert "[SOP-01#2]" in report and "**Reroute**: approved" in report and "**Hold shipment**: rejected" in report
+    assert "Alternate port: Needs at least 20" in report and investigation.DISCLAIMER in report
+    assert "Automatic checks flagged" not in report
+    assert {row.action for row in db.query(AuditLog) if row.entity != "user"} == {"start", "approved", "rejected"}
+    assert client.get("/api/investigations/stats").json()["by_status"] == {"completed": 1}
+
+
+def test_g1_fail_stale_runs(client, db, monkeypatch):
+    incident_id = _g1_setup(db, monkeypatch)
+    db.add_all([G1Investigation(incident_id=incident_id, scope={}, status=status)
+                for status in ("running", "reporting", "awaiting_approval")])
+    db.commit()
+    assert investigation.fail_stale_runs(db) == 2
+    assert sorted(i.status for i in db.query(G1Investigation)) == ["awaiting_approval", "failed", "failed"]
 
 # --- G3 ---
+from langchain_core.tools import StructuredTool
+
+from app.assistant import chat
+from app.assistant.models import ChatMessage as ChatRow
+
+
+class G3Args(BaseModel):
+    market: str | None = None
+
+
+G3_TOOL = StructuredTool(name="risk_summary", description="risk", args_schema=G3Args,
+                         func=lambda db, market=None: {"total": 40, "high": 12})
+
+
+def _g3_call(n: int = 0) -> AIMessage:
+    return AIMessage("", tool_calls=[{"name": "risk_summary", "args": {"market": "LATAM"}, "id": f"c{n}"}])
+
+
+def _g3_chat(client, monkeypatch, replies, session_id=None) -> list[dict]:
+    """Posts a message with the LLM replaying `replies` (the last one repeats); returns the SSE events."""
+    replies = list(replies)
+    monkeypatch.setattr(chat.tools, "TOOLS", [G3_TOOL])
+    monkeypatch.setattr(chat.llm, "complete_with_tools",
+                        lambda db, messages, tools: (replies.pop(0) if len(replies) > 1 else replies[0])
+                        .model_copy(update={"id": None}))
+    response = client.post("/api/chat", json={"session_id": session_id, "message": "How many high-risk orders?"})
+    assert response.status_code == 200, response.text
+    return [json.loads(line[6:]) for line in response.text.split("\n\n") if line]
+
+
+def test_g3_answers_after_tool_events_and_stores_both_messages(client, db, monkeypatch):
+    login_as(client, "analyst")
+    events = _g3_chat(client, monkeypatch, [_g3_call(), AIMessage("There are 12 high-risk orders out of 40.")])
+    assert [e["type"] for e in events] == ["tool", "answer", "done"]
+    assert events[0] == {"type": "tool", "name": "risk_summary", "content": '{"market": "LATAM"}'}
+    assert events[1]["content"] == "There are 12 high-risk orders out of 40." and events[1]["degraded"] is False
+    history = client.get(f"/api/chat/{events[-1]['content']}").json()
+    assert [m["role"] for m in history] == ["user", "assistant"]
+    assert history[1]["tool_calls"] == [{"name": "risk_summary", "args": {"market": "LATAM"}}]
+
+
+def test_g3_regenerates_once_then_returns_raw_table(client, monkeypatch):
+    login_as(client, "analyst")
+    events = _g3_chat(client, monkeypatch, [_g3_call(), AIMessage("There are 15 orders."), AIMessage("12 of 40.")])
+    assert events[1] == {"type": "answer", "content": "12 of 40.", "citations": [], "degraded": False}
+    events = _g3_chat(client, monkeypatch, [_g3_call(), AIMessage("There are 15 orders."), AIMessage("Still 15.")])
+    assert events[1]["degraded"] is True and "| 40 | 12 |" in events[1]["content"]
+
+
+def test_g3_caps_tool_calls_and_says_dont_know_without_data(client, db, monkeypatch):
+    login_as(client, "analyst")
+    events = _g3_chat(client, monkeypatch, [_g3_call()])
+    assert [e["type"] for e in events].count("tool") == chat.MAX_TOOL_CALLS
+    assert events[-2]["degraded"] is True
+    events = _g3_chat(client, monkeypatch, [AIMessage("Probably 30.")])
+    assert events[0]["content"] == chat.DONT_KNOW
+
+
+def test_g3_llm_error_and_foreign_session(client, db, monkeypatch):
+    login_as(client, "analyst")
+
+    def fail(db, messages, tools):
+        raise llm.LLMError("no cached response")
+
+    monkeypatch.setattr(chat.llm, "complete_with_tools", fail)
+    response = client.post("/api/chat", json={"message": "hi"})
+    assert '"type":"error"' in response.text and response.text.endswith('"}\n\n')
+    session_id = db.query(ChatRow).one().session_id
+    login_as(client, "supervisor")
+    assert client.post("/api/chat", json={"session_id": session_id, "message": "hi"}).status_code == 404
 
 # --- X1 ---
