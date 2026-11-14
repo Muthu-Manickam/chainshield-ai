@@ -14,7 +14,9 @@ from tests.conftest import login_as
 
 
 @pytest.fixture
-def risk_predictor():
+def risk_predictor(monkeypatch):
+    # macOS: xgboost segfaults on load once torch (imported via ml.text) has started its own OpenMP runtime
+    monkeypatch.setenv("OMP_NUM_THREADS", "1")
     return Predictor.load(settings.artifacts_dir / "risk" / "v1")
 
 
@@ -72,7 +74,8 @@ def test_s1_search_hides_trained_blocks_and_filters(db, scored):
 def test_s1_summary_stats_and_detail(db, scored, client):
     summary = orders.risk_summary(db, OrderFilter())
     assert summary.total == 1000 == summary.high + summary.medium + summary.low
-    assert sum(g["orders"] for g in summary.by_shipping_mode) == 1000
+    assert sum(g["total"] for g in summary.by_shipping_mode) == 1000
+    assert all(g["total"] == g["high"] + g["medium"] + g["low"] for g in summary.by_shipping_mode)
     assert 0 < summary.mean_score < 1
     assert orders.risk_summary(db, OrderFilter(include_trained=True)).total == 2000
     stats = orders.order_stats(db)
@@ -184,7 +187,7 @@ def test_s2_review_stats_and_audit(db, tweets_dir, analyst, incident_champion):
     assert stats.needs_review == stats.by_status.get("needs_review", 0)
     rows, total = incidents.search_incidents(db, "reviewed", "rescue_donation", 1)
     assert total == 1 and rows[0].id == first.id
-    assert incidents.search_incidents(db, None, None, 1)[1] == 12
+    assert incidents.search_incidents(db, None, None, 1)[1] == 4  # unreleased pool rows are hidden by default
 
 
 def test_s2_release_gold_keeps_analyst_reviews(db, tweets_dir, analyst, incident_champion):
