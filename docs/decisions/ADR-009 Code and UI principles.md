@@ -8,7 +8,7 @@ date: 2026-11-15
 **Status:** accepted
 
 ## Decision
-Modern, single-theme UI and minimal, human-written code, enforced by a review-and-removal step before every merge.
+Modern, single-theme UI and minimal, human-written code, kept lean by two mid-build checkpoints and one final review-and-removal pass.
 
 ## Context
 The project is built with many LLM coding agents in parallel, which tend to produce too much code. The owner wants
@@ -24,10 +24,12 @@ code that reads like a careful human wrote it.
 - No function, method, component or file unless something uses it now.
 - No duplicated logic; no speculative options, wrappers, base classes, factories or utils grab-bags.
 
-**Review and removal**
-- Before each merge into `release/v1`: review the diff and delete unused code, duplication and needless layers.
-- After each wave of merges: cleanup pass over the whole tree; report lines removed vs added.
-- Reviewer: Opus 5.5 or Fable 5.2; edits by Sonnet 5.5. Checks and browser flows must still pass afterwards.
+**Review and removal (speed first)**
+- No review or code cut on every merge; merges run only the task's acceptance check.
+- Checkpoint 1, after the skeleton wave: browser smoke test + review of shared patterns so later agents copy lean code.
+- Checkpoint 2, after core services use the real models and RAG: browser check of order and incident flows + targeted cleanup.
+- Final pass after all features merge: full review and removal, then full browser verification; report lines removed vs added.
+- Reviewer: Opus 5.5 or Fable 5.2; edits by Sonnet 5.5. Maximise parallel sub-agents; never block merges on review.
 
 ## Related
 - [[Tech Stack]]
