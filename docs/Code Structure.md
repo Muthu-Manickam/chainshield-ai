@@ -108,9 +108,11 @@ frontend/
     index.css               Tailwind + shadcn tokens (light theme only)
     components/
       ui/                   shadcn components, added only when used (button, card, table, badge, input,
-                            dialog, tabs, select, textarea, sonner, chart, skeleton)
+                            dialog, tabs, select, textarea, chart, skeleton; toasts come from the sonner package)
       AppShell.tsx          sidebar + header
-      StatCard.tsx          KPI card (used on several pages)
+      StatCard.tsx          KPI card
+      OptionSelect.tsx      shadcn Select with an optional "All" item (used by 5 pages)
+      Markdown.tsx          tiny renderer for report and chat text (headings, bullets, bold)
     pages/
       Login.tsx  Overview.tsx  Orders.tsx  Incidents.tsx  Investigations.tsx
       Assistant.tsx  Knowledge.tsx  Models.tsx  Admin.tsx
