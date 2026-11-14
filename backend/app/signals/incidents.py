@@ -129,8 +129,7 @@ def reclassify_unreviewed(db: Session, version_id: int) -> int:
 
 def search_incidents(db: Session, status: str | None, label: str | None, page: int) -> tuple[list[Incident], int]:
     query = select(Incident)
-    if status:
-        query = query.where(Incident.status == status)
+    query = query.where(Incident.status == status) if status else query.where(Incident.status != "pool")
     if label:
         query = query.where(func.coalesce(Incident.reviewed_label, Incident.predicted_label) == label)
     total = db.scalar(select(func.count()).select_from(query.subquery()))
