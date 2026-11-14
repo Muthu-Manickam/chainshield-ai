@@ -1,14 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
+import { useOutletContext } from "react-router"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { toast } from "sonner"
 import { api } from "@/api"
+import OptionSelect from "@/components/OptionSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { type ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { EvalRun, Job, ModelVersion, User } from "@/types"
@@ -18,6 +19,7 @@ const FAMILIES = {
   incident: ["tfidf", "bilstm", "distilbert"],
 } as const
 type Task = keyof typeof FAMILIES
+const BLOCKS = ["s1", "s2"]
 
 const statusVariant = { champion: "default", candidate: "secondary", retired: "outline", rejected: "destructive" } as const
 const loeoConfig = { macro_f1: { label: "Macro-F1", color: "var(--chart-1)" } } satisfies ChartConfig
@@ -107,7 +109,7 @@ function TextComparison({ models, folds }: { models: EvalRun[]; folds: EvalRun[]
   const cascadeRows = ["distilbert_alone", "bilstm_screen_then_distilbert"].map((key) => [
     key.replaceAll("_", " "),
     dig(cascade, key, "macro_f1") as number,
-    dig(cascade, key, "humanitarian_suppressed") as number,
+    String(dig(cascade, key, "humanitarian_suppressed") ?? "n/a"),
   ])
 
   return (
@@ -161,21 +163,20 @@ function TextComparison({ models, folds }: { models: EvalRun[]; folds: EvalRun[]
 // Headline numbers of one version: the promotion-set block of its metrics.json, narrowed to its own family.
 function headline(v: ModelVersion): string {
   if (v.task === "risk") {
-    const m = dig(v.metrics, "s3", v.family.replace("risk_", "")) ?? dig(v.metrics, "s3") ?? v.metrics
+    const m = dig(v.metrics, "s3", v.family.replace("risk_", ""))
     return `ROC-AUC ${num(dig(m, "roc_auc"))} · PR-AUC ${num(dig(m, "pr_auc"))} · Brier ${num(dig(m, "brier"))}`
   }
-  const m = dig(v.metrics, "pool_holdout") ?? dig(v.metrics, "dev") ?? v.metrics
+  const m = dig(v.metrics, "pool_holdout")
   return `Macro-F1 ${num(dig(m, "macro_f1"))} · Infra recall ${num(dig(m, "per_class_recall", "infrastructure"))}`
 }
 
 function GateBadge({ gate }: { gate: ModelVersion["gate"] }) {
-  const passed = dig(gate, "passed") ?? dig(gate, "ok")
-  if (typeof passed !== "boolean") return <span className="text-muted-foreground">n/a</span>
-  const failed = Object.entries(gate ?? {}).filter(([, v]) => v === false && v !== passed).map(([k]) => k)
+  if (!gate) return <span className="text-muted-foreground">n/a</span>
+  const failed = Object.entries(gate.checks).filter(([, ok]) => !ok).map(([name]) => name.replaceAll("_", " "))
   return (
     <div className="flex flex-col items-start gap-1">
-      <Badge variant={passed ? "outline" : "destructive"}>{passed ? "Pass" : "Fail"}</Badge>
-      {!passed && failed.length > 0 && <span className="text-xs text-muted-foreground">{failed.join(", ")}</span>}
+      <Badge variant={gate.passed ? "outline" : "destructive"}>{gate.passed ? "Pass" : "Fail"}</Badge>
+      {failed.length > 0 && <span className="text-xs text-muted-foreground">{failed.join(", ")}</span>}
     </div>
   )
 }
@@ -207,7 +208,7 @@ function Versions({ task, versions, isAdmin, onPromote }: {
           {versions.map((v) => (
             <TableRow key={v.id}>
               <TableCell className="font-medium">v{v.version}</TableCell>
-              <TableCell>{v.family}</TableCell>
+              <TableCell>{v.family.replaceAll("_", " ")}</TableCell>
               <TableCell>
                 <Badge variant={statusVariant[v.status]}>{v.status}</Badge>
               </TableCell>
@@ -239,7 +240,8 @@ function Versions({ task, versions, isAdmin, onPromote }: {
   )
 }
 
-function Retrain({ onDone }: { onDone: () => void }) {
+function Retrain() {
+  const qc = useQueryClient()
   const [task, setTask] = useState<Task>("risk")
   const [family, setFamily] = useState<string>(FAMILIES.risk[1])
   const [jobId, setJobId] = useState<number | null>(null)
@@ -257,41 +259,21 @@ function Retrain({ onDone }: { onDone: () => void }) {
   const status = job.data?.status
   const finished = status === "done" || status === "failed"
   useEffect(() => {
-    if (finished) onDone()
-  }, [finished]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (finished) qc.invalidateQueries({ queryKey: ["models"] })
+  }, [finished, qc])
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Select
+      <OptionSelect
+        className="w-32"
+        options={Object.keys(FAMILIES)}
         value={task}
-        onValueChange={(value) => {
+        onChange={(value) => {
           setTask(value as Task)
           setFamily(FAMILIES[value as Task][0])
         }}
-      >
-        <SelectTrigger className="w-32 bg-background">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {Object.keys(FAMILIES).map((t) => (
-            <SelectItem key={t} value={t} className="capitalize">
-              {t}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={family} onValueChange={setFamily}>
-        <SelectTrigger className="w-36 bg-background">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {FAMILIES[task].map((f) => (
-            <SelectItem key={f} value={f}>
-              {f}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      />
+      <OptionSelect className="w-36" options={FAMILIES[task]} value={family} onChange={setFamily} />
       <Button variant="outline" disabled={start.isPending || (jobId !== null && !finished)} onClick={() => start.mutate()}>
         Retrain
       </Button>
@@ -309,8 +291,7 @@ export default function Models() {
   const queryClient = useQueryClient()
   const [confirm, setConfirm] = useState<ModelVersion | null>(null)
   const [block, setBlock] = useState("s1")
-  const me = useQuery({ queryKey: ["me"], queryFn: () => api<User>("/api/auth/me") })
-  const isAdmin = me.data?.role === "admin"
+  const isAdmin = useOutletContext<User>().role === "admin"
   const models = useQuery({ queryKey: ["models"], queryFn: () => api<ModelVersion[]>("/api/models") })
   const risk = useQuery({ queryKey: ["evals", "risk_models"], queryFn: () => api<EvalRun[]>("/api/evals?kind=risk_models") })
   const incident = useQuery({
@@ -342,7 +323,7 @@ export default function Models() {
   })
 
   const error = models.error ?? risk.error ?? incident.error ?? folds.error
-  const byTask = (task: Task) => (models.data ?? []).filter((v) => v.task === task).sort((a, b) => b.version - a.version)
+  const byTask = (task: Task) => (models.data ?? []).filter((v) => v.task === task)
   const rollback = confirm && byTask(confirm.task).find((v) => v.status === "champion")
   const isRollback = !!rollback && !!confirm && confirm.version < rollback.version
 
@@ -356,20 +337,12 @@ export default function Models() {
         <Card>
           <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-3">
             <div className="flex items-center gap-2">
-              <Select value={block} onValueChange={setBlock}>
-                <SelectTrigger className="w-24 bg-background">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="s1">s1</SelectItem>
-                  <SelectItem value="s2">s2</SelectItem>
-                </SelectContent>
-              </Select>
+              <OptionSelect className="w-24" options={BLOCKS} value={block} onChange={setBlock} />
               <Button variant="outline" disabled={release.isPending} onClick={() => release.mutate()}>
                 Release next batch
               </Button>
             </div>
-            <Retrain onDone={refresh} />
+            <Retrain />
           </CardContent>
         </Card>
       )}

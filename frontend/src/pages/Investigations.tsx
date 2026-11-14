@@ -1,69 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useState } from "react"
-import { Link, useNavigate, useParams, useSearchParams } from "react-router"
+import { Link, useNavigate, useOutletContext, useParams, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import { api, stream } from "@/api"
+import Markdown from "@/components/Markdown"
+import OptionSelect from "@/components/OptionSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import type { Action, ActionRule, Investigation, InvestigationDetail, Step, User } from "@/types"
-
-const MARKETS = ["Africa", "Europe", "LATAM", "Pacific Asia", "USCA"]
-const SHIPPING_MODES = ["Standard Class", "Second Class", "First Class", "Same Day"]
-const ANY = "any"
+import { type Action, type ActionRule, type Investigation, type InvestigationDetail, MARKETS, SHIPPING_MODES, type Step, type User } from "@/types"
 
 function StatusBadge({ status }: { status: string }) {
   const variant = status === "failed" ? "destructive" : status === "running" || status === "reporting" ? "secondary" : "outline"
-  return <Badge variant={variant}>{status.replace("_", " ")}</Badge>
-}
-
-function ScopeSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
-  return (
-    <div className="flex flex-col gap-1.5 text-sm">
-      {label}
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-48">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ANY}>Any</SelectItem>
-          {options.map((o) => (
-            <SelectItem key={o} value={o}>
-              {o}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
-function scopeFromQuery(raw: string | null): Record<string, string> {
-  try {
-    return raw ? JSON.parse(raw) : {}
-  } catch {
-    return {}
-  }
+  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>
 }
 
 function NewInvestigation() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [params] = useSearchParams()
-  const initial = scopeFromQuery(params.get("scope"))
+  const initial: Record<string, string> = JSON.parse(params.get("scope") ?? "{}")
   const [incidentId, setIncidentId] = useState(params.get("incident") ?? "")
-  const [market, setMarket] = useState(initial.market ?? ANY)
-  const [mode, setMode] = useState(initial.shipping_mode ?? ANY)
+  const [market, setMarket] = useState(initial.market ?? "all")
+  const [mode, setMode] = useState(initial.shipping_mode ?? "all")
 
   const start = useMutation({
     mutationFn: () => {
       const scope: Record<string, string> = {}
-      if (market !== ANY) scope.market = market
-      if (mode !== ANY) scope.shipping_mode = mode
+      if (market !== "all") scope.market = market
+      if (mode !== "all") scope.shipping_mode = mode
       return api<Investigation>("/api/investigations", {
         method: "POST",
         body: JSON.stringify({ incident_id: Number(incidentId), scope }),
@@ -87,8 +55,14 @@ function NewInvestigation() {
             Incident id
             <Input className="w-32" inputMode="numeric" value={incidentId} onChange={(e) => setIncidentId(e.target.value)} />
           </label>
-          <ScopeSelect label="Market" value={market} options={MARKETS} onChange={setMarket} />
-          <ScopeSelect label="Shipping mode" value={mode} options={SHIPPING_MODES} onChange={setMode} />
+          <div className="flex flex-col gap-1.5 text-sm">
+            Market
+            <OptionSelect all="Any" className="w-48" options={MARKETS} value={market} onChange={setMarket} />
+          </div>
+          <div className="flex flex-col gap-1.5 text-sm">
+            Shipping mode
+            <OptionSelect all="Any" className="w-48" options={SHIPPING_MODES} value={mode} onChange={setMode} />
+          </div>
           <Button disabled={!/^\d+$/.test(incidentId) || start.isPending} onClick={() => start.mutate()}>
             Start
           </Button>
@@ -152,9 +126,33 @@ function List() {
   )
 }
 
-const asList = (value: unknown): unknown[] => (Array.isArray(value) ? value : value ? [value] : [])
-const citationKey = (c: unknown) => String((c as { citation_key?: string })?.citation_key ?? c)
-const summarize = (output: unknown) => (output ? JSON.stringify(output).slice(0, 200) : "")
+// The node outputs the timeline summarises (see backend assistant/investigation.py).
+interface NodeOutput {
+  stop?: string | null
+  risk?: { total: number; high: number } | null
+  gaps?: Record<string, string>
+  findings?: string
+  guidance?: { chunks: { score: number }[]; evidence_gap: boolean }
+  plan?: unknown[]
+  errors?: string[]
+}
+
+function summarize({ node, output }: Step): string {
+  const o = (output ?? {}) as NodeOutput
+  if (node === "intake") {
+    if (o.stop) return `stopped: ${o.stop.replaceAll("_", " ")}`
+    const risk = o.risk ? `${o.risk.total} orders in scope, ${o.risk.high} high risk` : "no order data"
+    return [risk, ...Object.values(o.gaps ?? {})].join(" · ")
+  }
+  if (node === "intelligence") return o.findings ?? ""
+  if (node === "knowledge") {
+    const chunks = o.guidance?.chunks ?? []
+    if (o.guidance?.evidence_gap) return "evidence gap"
+    return `${chunks.length} chunks, best score ${Math.max(...chunks.map((c) => c.score)).toFixed(2)}`
+  }
+  if (node === "planning") return `${o.plan?.length ?? 0} actions ranked`
+  return `errors: ${o.errors?.length ? o.errors.join("; ") : "none"}`
+}
 
 function Timeline({ steps }: { steps: Step[] }) {
   return (
@@ -171,13 +169,13 @@ function Timeline({ steps }: { steps: Step[] }) {
         <TableBody>
           {steps.map((s) => (
             <TableRow key={s.id}>
-              <TableCell className="font-medium">{s.node}</TableCell>
+              <TableCell className="font-medium">{s.node.replaceAll("_", " ")}</TableCell>
               <TableCell>
                 <Badge variant={s.status === "ok" ? "outline" : "destructive"}>{s.status}</Badge>
               </TableCell>
               <TableCell className="tabular-nums">{s.duration_ms} ms</TableCell>
               <TableCell className="max-w-xl whitespace-normal break-words text-xs text-muted-foreground">
-                {s.error ?? summarize(s.output)}
+                {s.error ?? summarize(s)}
               </TableCell>
             </TableRow>
           ))}
@@ -196,7 +194,6 @@ function Timeline({ steps }: { steps: Step[] }) {
 
 function Actions({ actions, canDecide, onDecide }: { actions: Action[]; canDecide: boolean; onDecide: (a: Action, d: "approved" | "rejected") => void }) {
   const rules = useQuery({ queryKey: ["rules"], queryFn: () => api<ActionRule[]>("/api/rules") })
-  const sorted = [...actions].sort((a, b) => Number(b.eligible) - Number(a.eligible) || (a.rank ?? 99) - (b.rank ?? 99))
   return (
     <Card className="py-0">
       <Table>
@@ -212,7 +209,7 @@ function Actions({ actions, canDecide, onDecide }: { actions: Action[]; canDecid
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sorted.map((a) => {
+          {actions.map((a) => {
             const rule = rules.data?.find((r) => r.code === a.rule_code)
             return (
             <TableRow key={a.id}>
@@ -245,24 +242,19 @@ function Actions({ actions, canDecide, onDecide }: { actions: Action[]; canDecid
 
 function Detail({ id }: { id: string }) {
   const qc = useQueryClient()
-  const me = useQuery({ queryKey: ["me"], queryFn: () => api<User>("/api/auth/me") })
+  const { role } = useOutletContext<User>()
   const detail = useQuery({
     queryKey: ["investigation", id],
     queryFn: () => api<InvestigationDetail>(`/api/investigations/${id}`),
-    refetchInterval: (q) => (["running", "reporting"].includes(q.state.data?.status ?? "running") ? 3000 : false),
+    refetchInterval: (q) => (q.state.data?.status === "reporting" ? 3000 : false),
   })
-  const [live, setLive] = useState<Step[]>([])
 
   useEffect(() => {
     const controller = new AbortController()
-    setLive([])
-    stream<Step | { type: "done" }>(
+    stream<unknown>(
       `/api/investigations/${id}/stream`,
       null,
-      (event) => {
-        if ("type" in event) qc.invalidateQueries({ queryKey: ["investigation", id] })
-        else setLive((all) => [...all.filter((s) => s.id !== event.id), event])
-      },
+      () => qc.invalidateQueries({ queryKey: ["investigation", id] }),
       controller.signal,
     ).catch((e: Error) => controller.signal.aborted || toast.error(e.message))
     return () => controller.abort()
@@ -281,9 +273,9 @@ function Detail({ id }: { id: string }) {
   if (detail.isPending) return <Skeleton className="h-64" />
   if (detail.error) return <p className="text-sm text-destructive">{detail.error.message}</p>
   const d = detail.data
-  const findings = asList(d.state.findings)
-  const citations = asList(d.state.citations)
-  const canDecide = me.data?.role === "supervisor" || me.data?.role === "admin"
+  const findings = d.state.findings as string | undefined
+  const citations = (d.state.citations ?? []) as string[]
+  const canDecide = role === "supervisor" || role === "admin"
 
   return (
     <>
@@ -308,22 +300,18 @@ function Detail({ id }: { id: string }) {
       </Card>
 
       <h3 className="font-semibold">Steps</h3>
-      <Timeline steps={live.length ? live : d.steps} />
+      <Timeline steps={d.steps} />
 
-      {(findings.length > 0 || citations.length > 0) && (
+      {(findings || citations.length > 0) && (
         <Card>
           <CardHeader>
             <CardTitle>Findings and cited guidance</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 text-sm">
-            <ul className="list-disc pl-5">
-              {findings.map((f, i) => (
-                <li key={i}>{typeof f === "string" ? f : JSON.stringify(f)}</li>
-              ))}
-            </ul>
+            {findings && <p>{findings}</p>}
             <div className="flex flex-wrap gap-2">
               {citations.map((c) => (
-                <Badge key={citationKey(c)} variant="secondary">{citationKey(c)}</Badge>
+                <Badge key={c} variant="secondary">{c}</Badge>
               ))}
             </div>
           </CardContent>
@@ -346,7 +334,7 @@ function Detail({ id }: { id: string }) {
             </Button>
           </CardHeader>
           <CardContent>
-            <pre className="whitespace-pre-wrap font-sans text-sm">{d.report}</pre>
+            <Markdown text={d.report} />
           </CardContent>
         </Card>
       )}

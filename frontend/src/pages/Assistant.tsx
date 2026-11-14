@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { api, stream } from "@/api"
+import Markdown from "@/components/Markdown"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -42,17 +43,17 @@ function Bubble({ turn }: { turn: Turn }) {
         <div className="flex flex-wrap gap-1.5">
           {turn.tools.map((t, i) => (
             <Badge key={i} variant="outline" className="font-normal text-muted-foreground">
-              used tool {t}
+              used tool {t.replaceAll("_", " ")}
             </Badge>
           ))}
         </div>
       )}
       <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-xl px-4 py-2.5 text-sm ${
+        className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${
           user ? "bg-primary text-primary-foreground" : turn.error ? "bg-destructive/10 text-destructive" : "bg-muted"
         }`}
       >
-        {turn.content}
+        {user ? turn.content : <Markdown text={turn.content} />}
       </div>
       {(turn.degraded || turn.citations.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
@@ -82,7 +83,6 @@ export default function Assistant() {
 
   useEffect(() => {
     if (sessionId) api<ChatMessage[]>(`/api/chat/${sessionId}`).then((m) => setTurns(m.map(fromHistory)), () => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -153,18 +153,7 @@ export default function Assistant() {
         {turns.map((t, i) => (
           <Bubble key={i} turn={t} />
         ))}
-        {sending && (
-          <div className="flex flex-col items-start gap-1.5">
-            <div className="flex flex-wrap gap-1.5">
-              {tools.map((t, i) => (
-                <Badge key={i} variant="outline" className="font-normal text-muted-foreground">
-                  used tool {t}
-                </Badge>
-              ))}
-            </div>
-            <span className="text-sm text-muted-foreground">Thinking…</span>
-          </div>
-        )}
+        {sending && <Bubble turn={{ role: "assistant", content: "Thinking…", tools, citations: [], degraded: false }} />}
         <div ref={bottom} />
       </Card>
 

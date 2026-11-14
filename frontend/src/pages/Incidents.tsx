@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
-import { Link } from "react-router"
+import { Link, useOutletContext } from "react-router"
 import { toast } from "sonner"
 import { api } from "@/api"
+import OptionSelect from "@/components/OptionSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
@@ -15,28 +15,11 @@ import type { Incident, Page, User } from "@/types"
 const LABELS = ["infrastructure", "affected_people", "rescue_donation", "other_relevant", "not_humanitarian"]
 const STATUSES = ["pool", "classified", "needs_review", "reviewed"]
 const ALL = "all"
-
-function FilterSelect({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-48">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={ALL}>All</SelectItem>
-        {options.map((o) => (
-          <SelectItem key={o} value={o}>
-            {o}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
+const PAGE_SIZE = 50
 
 export default function Incidents() {
   const qc = useQueryClient()
-  const me = useQuery({ queryKey: ["me"], queryFn: () => api<User>("/api/auth/me") })
+  const user = useOutletContext<User>()
   const [status, setStatus] = useState(ALL)
   const [label, setLabel] = useState(ALL)
   const [page, setPage] = useState(1)
@@ -61,7 +44,7 @@ export default function Incidents() {
   const addMessage = () =>
     run.mutate({ path: "/api/incidents", body: { text } }, { onSuccess: () => setText("") })
 
-  const pages = Math.max(1, Math.ceil((incidents.data?.total ?? 0) / 50))
+  const pages = Math.max(1, Math.ceil((incidents.data?.total ?? 0) / PAGE_SIZE))
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,7 +57,7 @@ export default function Incidents() {
           <Button onClick={() => run.mutate({ path: "/api/incidents/release", body: { count: 10 } })}>
             Release next 10
           </Button>
-          {me.data?.role === "admin" && (
+          {user.role === "admin" && (
             <Button
               variant="outline"
               onClick={() => run.mutate({ path: "/api/incidents/release-gold" }, { onSuccess: () => toast.success("Gold labels released") })}
@@ -97,8 +80,8 @@ export default function Incidents() {
       </Card>
 
       <div className="flex gap-3">
-        <FilterSelect value={status} options={STATUSES} onChange={(v) => { setStatus(v); setPage(1) }} />
-        <FilterSelect value={label} options={LABELS} onChange={(v) => { setLabel(v); setPage(1) }} />
+        <OptionSelect all="All statuses" className="w-48" options={STATUSES} value={status} onChange={(v) => { setStatus(v); setPage(1) }} />
+        <OptionSelect all="All labels" className="w-48" options={LABELS} value={label} onChange={(v) => { setLabel(v); setPage(1) }} />
       </div>
 
       {incidents.isPending && <Skeleton className="h-64" />}
@@ -118,32 +101,21 @@ export default function Incidents() {
             </TableHeader>
             <TableBody>
               {incidents.data.items.map((i) => {
-                const pick = picks[i.id] ?? i.reviewed_label ?? i.predicted_label ?? undefined
+                const pick = picks[i.id] ?? i.reviewed_label ?? i.predicted_label
                 return (
                   <TableRow key={i.id}>
                     <TableCell className="max-w-md whitespace-normal">{i.text}</TableCell>
-                    <TableCell>{i.predicted_label && <Badge variant="secondary">{i.predicted_label}</Badge>}</TableCell>
+                    <TableCell>{i.predicted_label && <Badge variant="secondary">{i.predicted_label.replaceAll("_", " ")}</Badge>}</TableCell>
                     <TableCell className="tabular-nums">
                       {i.confidence !== null && `${(i.confidence * 100).toFixed(0)}%`}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={i.status === "needs_review" ? "destructive" : "outline"}>{i.status}</Badge>
+                      <Badge variant={i.status === "needs_review" ? "destructive" : "outline"}>{i.status.replaceAll("_", " ")}</Badge>
                     </TableCell>
                     <TableCell>
                       {i.status !== "pool" && (
                         <div className="flex gap-2">
-                          <Select value={pick} onValueChange={(v) => setPicks({ ...picks, [i.id]: v })}>
-                            <SelectTrigger size="sm" className="w-44">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {LABELS.map((l) => (
-                                <SelectItem key={l} value={l}>
-                                  {l}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <OptionSelect size="sm" options={LABELS} value={pick ?? ""} onChange={(v) => setPicks({ ...picks, [i.id]: v })} />
                           <Button
                             size="sm"
                             variant="outline"

@@ -14,19 +14,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import type { IncidentStats, OrderStats } from "@/types"
 
-// The investigations stats route returns {by_status: {<status>: count}} (same shape as IncidentStats).
-interface InvestigationStats {
-  by_status?: Record<string, number>
-}
-
-// Each by_shipping_mode row: {shipping_mode, total, high, medium, low}.
-interface ModeRisk {
-  shipping_mode: string
-  high: number
-  medium: number
-  low: number
-}
-
 const riskConfig = {
   high: { label: "High", color: "var(--chart-1)" },
   medium: { label: "Medium", color: "var(--chart-2)" },
@@ -43,16 +30,15 @@ export default function Overview() {
   })
   const investigations = useQuery({
     queryKey: ["investigations", "stats"],
-    queryFn: () => api<InvestigationStats>("/api/investigations/stats"),
+    queryFn: () => api<{ by_status: Record<string, number> }>("/api/investigations/stats"),
   })
 
   const error = orders.error ?? incidents.error ?? investigations.error
   if (error) return <p className="text-sm text-destructive">{error.message}</p>
   if (!orders.data || !incidents.data || !investigations.data) return <Skeleton className="h-96" />
 
-  const status = investigations.data.by_status ?? {}
+  const status = investigations.data.by_status
   const open = (status.running ?? 0) + (status.awaiting_approval ?? 0) + (status.reporting ?? 0)
-  const byMode = orders.data.by_shipping_mode as unknown as ModeRisk[]
   const byLabel = Object.entries(incidents.data.by_label).map(([label, count]) => ({
     label: label.replaceAll("_", " "),
     count,
@@ -65,7 +51,7 @@ export default function Overview() {
         <p className="text-muted-foreground">Risk, incident and investigation numbers at a glance.</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Orders at risk" value={orders.data.by_band.high ?? 0} hint="High-risk band" />
+        <StatCard label="Orders at risk" value={orders.data.by_band.high} hint="High-risk band" />
         <StatCard label="Incidents to review" value={incidents.data.needs_review} hint="Awaiting an analyst" />
         <StatCard label="Open investigations" value={open} hint="Running, reporting or awaiting approval" />
         <StatCard label="Pending approvals" value={status.awaiting_approval ?? 0} hint="Waiting for a supervisor" />
@@ -78,7 +64,7 @@ export default function Overview() {
           </CardHeader>
           <CardContent>
             <ChartContainer config={riskConfig} className="h-72 w-full">
-              <BarChart data={byMode}>
+              <BarChart data={orders.data.by_shipping_mode}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="shipping_mode" tickLine={false} axisLine={false} />
                 <YAxis tickLine={false} axisLine={false} />

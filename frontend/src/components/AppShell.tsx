@@ -68,7 +68,7 @@ export default function AppShell({ user }: { user: User }) {
           </Button>
         </header>
         <main className="flex-1 bg-muted/30 p-8">
-          <Outlet />
+          <Outlet context={user} />
         </main>
       </div>
     </div>

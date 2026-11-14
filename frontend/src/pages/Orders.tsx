@@ -2,57 +2,32 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link } from "react-router"
 import { api } from "@/api"
+import OptionSelect from "@/components/OptionSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import type { Band, OrderDetail, OrderRow, Page } from "@/types"
+import { type Band, MARKETS, type OrderDetail, type OrderRow, type Page, SHIPPING_MODES } from "@/types"
 
-const MARKETS = ["Africa", "Europe", "LATAM", "Pacific Asia", "USCA"]
-const SHIPPING_MODES = ["First Class", "Same Day", "Second Class", "Standard Class"]
 const BANDS: Band[] = ["high", "medium", "low"]
 const PAGE_SIZE = 20
 
 const bandVariant = { high: "destructive", medium: "secondary", low: "outline" } as const
 
-function FilterSelect({ label, options, value, onChange }: {
-  label: string
-  options: string[]
-  value: string
-  onChange: (value: string) => void
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-44 bg-background">
-        <SelectValue placeholder={label} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">All {label.toLowerCase()}s</SelectItem>
-        {options.map((option) => (
-          <SelectItem key={option} value={option} className="capitalize">
-            {option}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-function OrderDialog({ id, onClose }: { id: number | null; onClose: () => void }) {
+function OrderDialog({ orderId, onClose }: { orderId: number | null; onClose: () => void }) {
   const order = useQuery({
-    queryKey: ["orders", id],
-    queryFn: () => api<OrderDetail>(`/api/orders/${id}`),
-    enabled: id !== null,
+    queryKey: ["orders", orderId],
+    queryFn: () => api<OrderDetail>(`/api/orders/${orderId}`),
+    enabled: orderId !== null,
   })
   const data = order.data
   const scope = data && JSON.stringify({ market: data.market, shipping_mode: data.shipping_mode })
 
   return (
-    <Dialog open={id !== null} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={orderId !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Order {data?.order_id ?? ""}</DialogTitle>
@@ -74,10 +49,10 @@ function OrderDialog({ id, onClose }: { id: number | null; onClose: () => void }
             <div>
               <h3 className="mb-2 text-sm font-medium">Top factors</h3>
               <ul className="flex flex-col divide-y rounded-md border text-sm">
-                {(data.factors ?? []).slice(0, 5).map((factor) => (
+                {(data.factors ?? []).map((factor) => (
                   <li key={factor.feature} className="flex justify-between px-3 py-2">
                     <span>
-                      {factor.feature}
+                      {factor.feature.replaceAll("_", " ")}
                       <span className="text-muted-foreground"> = {String(factor.value)}</span>
                     </span>
                     <span className="tabular-nums">
@@ -91,11 +66,13 @@ function OrderDialog({ id, onClose }: { id: number | null; onClose: () => void }
             </div>
           </div>
         )}
-        <DialogFooter>
-          <Button asChild disabled={!scope}>
-            <Link to={`/investigations?scope=${encodeURIComponent(scope ?? "")}`}>Investigate this scope</Link>
-          </Button>
-        </DialogFooter>
+        {scope && (
+          <DialogFooter>
+            <Button asChild>
+              <Link to={`/investigations?scope=${encodeURIComponent(scope)}`}>Investigate this scope</Link>
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -138,9 +115,9 @@ export default function Orders() {
         <p className="text-muted-foreground">Late-risk scores for open orders.</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <FilterSelect label="Market" options={MARKETS} value={market} onChange={filter(setMarket)} />
-        <FilterSelect label="Shipping mode" options={SHIPPING_MODES} value={mode} onChange={filter(setMode)} />
-        <FilterSelect label="Band" options={BANDS} value={band} onChange={filter(setBand)} />
+        <OptionSelect all="All markets" options={MARKETS} value={market} onChange={filter(setMarket)} />
+        <OptionSelect all="All shipping modes" options={SHIPPING_MODES} value={mode} onChange={filter(setMode)} />
+        <OptionSelect all="All bands" options={BANDS} value={band} onChange={filter(setBand)} />
         <form
           className="flex gap-2"
           onSubmit={(event) => {
@@ -188,7 +165,7 @@ export default function Orders() {
               </TableHeader>
               <TableBody>
                 {orders.data.items.map((order) => (
-                  <TableRow key={order.id} className="cursor-pointer" onClick={() => setSelected(order.id)}>
+                  <TableRow key={order.id} className="cursor-pointer" onClick={() => setSelected(order.order_id)}>
                     <TableCell>{order.order_id}</TableCell>
                     <TableCell>{order.order_date.slice(0, 10)}</TableCell>
                     <TableCell>{order.market}</TableCell>
@@ -225,7 +202,7 @@ export default function Orders() {
           </div>
         </>
       )}
-      <OrderDialog id={selected} onClose={() => setSelected(null)} />
+      <OrderDialog orderId={selected} onClose={() => setSelected(null)} />
     </div>
   )
 }

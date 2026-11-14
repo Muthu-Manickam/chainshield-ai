@@ -2,6 +2,9 @@ export type Role = "analyst" | "supervisor" | "admin"
 export type Band = "low" | "medium" | "high"
 type Json = Record<string, unknown>
 
+export const MARKETS = ["Africa", "Europe", "LATAM", "Pacific Asia", "USCA"]
+export const SHIPPING_MODES = ["First Class", "Same Day", "Second Class", "Standard Class"]
+
 export interface Page<T> {
   items: T[]
   total: number
@@ -26,6 +29,7 @@ export interface Job {
 export interface AuditEntry {
   id: number
   user_id: number | null
+  user_email?: string | null
   action: string
   entity: string
   entity_id: string | null
@@ -39,14 +43,6 @@ export interface EvalRun {
   name: string
   metrics: Json
   created_at: string
-}
-
-export interface OrderFilter {
-  market?: string
-  shipping_mode?: string
-  band?: Band
-  include_trained: boolean
-  q?: string
 }
 
 export interface OrderRow {
@@ -63,7 +59,7 @@ export interface OrderRow {
   risk_band: Band | null
 }
 
-export interface Factor {
+interface Factor {
   feature: string
   value: unknown
   impact: number
@@ -74,15 +70,6 @@ export interface OrderDetail extends OrderRow {
   factors: Factor[] | null
   late: boolean | null
   model_version_id: number | null
-}
-
-export interface RiskSummary {
-  total: number
-  high: number
-  medium: number
-  low: number
-  mean_score: number | null
-  by_shipping_mode: Json[]
 }
 
 export interface OrderStats {
@@ -111,14 +98,6 @@ export interface Incident {
   created_at: string
 }
 
-export interface Classification {
-  label: string
-  confidence: number
-  screening_score: number
-  needs_review: boolean
-  model_version_id: number | null
-}
-
 export interface IncidentStats {
   by_status: Record<string, number>
   by_label: Record<string, number>
@@ -136,7 +115,7 @@ export interface ModelVersion {
   snapshot_hash: string | null
   git_commit: string | null
   metrics: Json
-  gate: Json | null
+  gate: { passed: boolean; checks: Record<string, boolean> } | null
   status: "candidate" | "champion" | "retired" | "rejected"
   promoted_at: string | null
   created_at: string
@@ -153,7 +132,7 @@ export interface Document {
   created_at: string
 }
 
-export interface Chunk {
+interface Chunk {
   citation_key: string
   document_title: string
   section: string | null
@@ -178,16 +157,6 @@ export interface ActionRule {
   min_high_risk_orders: number
   requires_evidence: boolean
   is_active: boolean
-  created_at: string
-}
-
-export interface RuleResult {
-  rule_code: string
-  name: string
-  eligible: boolean
-  reason: string
-  approval_role: Role
-  cost_usd: number
 }
 
 export interface Investigation {

@@ -2,35 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { toast } from "sonner"
 import { api } from "@/api"
+import OptionSelect from "@/components/OptionSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ActionRule, AuditEntry, Role, User } from "@/types"
 
 const ROLES: Role[] = ["analyst", "supervisor", "admin"]
-
-function RoleSelect({ value, onChange }: { value: string; onChange: (r: Role) => void }) {
-  return (
-    <Select value={value} onValueChange={(v) => onChange(v as Role)}>
-      <SelectTrigger size="sm" className="w-36">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {ROLES.map((r) => (
-          <SelectItem key={r} value={r}>
-            {r}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
 
 function ActiveButton({ active, onClick }: { active: boolean; onClick: () => void }) {
   return (
@@ -40,11 +23,11 @@ function ActiveButton({ active, onClick }: { active: boolean; onClick: () => voi
   )
 }
 
-function useSave<T>(path: (id: number) => string, method: string, key: string) {
+function useSave(path: (id: number) => string, method: string, key: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: ({ id, body }: { id: number; body: unknown }) =>
-      api<T>(path(id), { method, body: JSON.stringify(body) }),
+      api<unknown>(path(id), { method, body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: [key] }),
     onError: (e: Error) => toast.error(e.message),
   })
@@ -80,7 +63,7 @@ function CreateUser() {
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
           />
-          <RoleSelect value={form.role} onChange={(role) => setForm({ ...form, role })} />
+          <OptionSelect size="sm" className="w-36" options={ROLES} value={form.role} onChange={(role) => setForm({ ...form, role: role as Role })} />
         </div>
         <DialogFooter>
           <Button disabled={!form.email || !form.password || create.isPending} onClick={() => create.mutate()}>
@@ -94,7 +77,7 @@ function CreateUser() {
 
 function Users() {
   const users = useQuery({ queryKey: ["users"], queryFn: () => api<User[]>("/api/users") })
-  const save = useSave<User>((id) => `/api/users/${id}`, "PATCH", "users")
+  const save = useSave((id) => `/api/users/${id}`, "PATCH", "users")
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
@@ -117,7 +100,7 @@ function Users() {
                 <TableRow key={u.id}>
                   <TableCell>{u.email}</TableCell>
                   <TableCell>
-                    <RoleSelect value={u.role} onChange={(role) => save.mutate({ id: u.id, body: { role } })} />
+                    <OptionSelect size="sm" className="w-36" options={ROLES} value={u.role} onChange={(role) => save.mutate({ id: u.id, body: { role } })} />
                   </TableCell>
                   <TableCell>
                     <ActiveButton
@@ -136,7 +119,7 @@ function Users() {
 }
 
 function RuleRow({ rule }: { rule: ActionRule }) {
-  const save = useSave<ActionRule>((id) => `/api/rules/${id}`, "PUT", "rules")
+  const save = useSave((id) => `/api/rules/${id}`, "PUT", "rules")
   const [cost, setCost] = useState(String(rule.cost_usd))
   const update = (body: Partial<ActionRule>) => save.mutate({ id: rule.id, body })
   const changed = Number(cost) !== rule.cost_usd
@@ -144,7 +127,7 @@ function RuleRow({ rule }: { rule: ActionRule }) {
     <TableRow>
       <TableCell>
         <div className="font-medium">{rule.name}</div>
-        <div className="text-xs text-muted-foreground">{rule.code}</div>
+        <div className="text-xs text-muted-foreground">{rule.code.replaceAll("_", " ")}</div>
       </TableCell>
       <TableCell>
         <div className="flex gap-2">
@@ -155,7 +138,7 @@ function RuleRow({ rule }: { rule: ActionRule }) {
         </div>
       </TableCell>
       <TableCell>
-        <RoleSelect value={rule.approval_role} onChange={(approval_role) => update({ approval_role })} />
+        <OptionSelect size="sm" className="w-36" options={ROLES} value={rule.approval_role} onChange={(role) => update({ approval_role: role as Role })} />
       </TableCell>
       <TableCell>
         <ActiveButton active={rule.is_active} onClick={() => update({ is_active: !rule.is_active })} />
@@ -211,12 +194,12 @@ function Audit() {
               <TableCell className="whitespace-nowrap text-muted-foreground">
                 {new Date(a.created_at).toLocaleString()}
               </TableCell>
-              <TableCell>{a.user_id ?? "system"}</TableCell>
+              <TableCell>{a.user_email ?? a.user_id ?? "system"}</TableCell>
               <TableCell>
-                <Badge variant="secondary">{a.action}</Badge>
+                <Badge variant="secondary">{a.action.replaceAll("_", " ")}</Badge>
               </TableCell>
               <TableCell>
-                {a.entity}
+                {a.entity.replaceAll("_", " ")}
                 {a.entity_id && ` #${a.entity_id}`}
               </TableCell>
               <TableCell className="max-w-sm truncate font-mono text-xs text-muted-foreground">

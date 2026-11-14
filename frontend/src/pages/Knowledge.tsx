@@ -1,16 +1,20 @@
-import { useMutation, useQuery } from "@tanstack/react-query"
-import { type FormEvent, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { type FormEvent, useEffect, useState } from "react"
+import { useOutletContext } from "react-router"
 import { api } from "@/api"
+import OptionSelect from "@/components/OptionSelect"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Document, Job, SearchResult, User } from "@/types"
 
+const ORIGINS = ["team-authored", "public"]
+
 function Upload() {
+  const qc = useQueryClient()
   const [code, setCode] = useState("")
   const [title, setTitle] = useState("")
   const [origin, setOrigin] = useState("team-authored")
@@ -28,6 +32,11 @@ function Upload() {
     refetchInterval: (q) => (q.state.data?.status === "queued" || q.state.data?.status === "running" ? 1000 : false),
   })
 
+  const finished = job.data?.status === "done" || job.data?.status === "failed"
+  useEffect(() => {
+    if (finished) qc.invalidateQueries({ queryKey: ["documents"] })
+  }, [finished, qc])
+
   const submit = (e: FormEvent) => {
     e.preventDefault()
     const form = new FormData()
@@ -43,15 +52,7 @@ function Upload() {
       <form onSubmit={submit} className="flex flex-wrap items-center gap-3">
         <Input className="w-32" placeholder="Code" value={code} onChange={(e) => setCode(e.target.value)} required />
         <Input className="w-64" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-        <Select value={origin} onValueChange={setOrigin}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="team-authored">team-authored</SelectItem>
-            <SelectItem value="public">public</SelectItem>
-          </SelectContent>
-        </Select>
+        <OptionSelect className="w-40" options={ORIGINS} value={origin} onChange={setOrigin} />
         <Input className="w-64" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
         <Button type="submit" disabled={!file || upload.isPending}>
           Upload
@@ -69,7 +70,7 @@ function Upload() {
 }
 
 export default function Knowledge() {
-  const me = useQuery({ queryKey: ["me"], queryFn: () => api<User>("/api/auth/me") })
+  const user = useOutletContext<User>()
   const [q, setQ] = useState("")
   const documents = useQuery({
     queryKey: ["documents"],
@@ -121,7 +122,7 @@ export default function Knowledge() {
         ))}
       </div>
 
-      {me.data?.role === "admin" && <Upload />}
+      {user.role === "admin" && <Upload />}
 
       <h2 className="text-lg font-semibold tracking-tight">Documents</h2>
       {documents.isPending && <Skeleton className="h-40" />}
