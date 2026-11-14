@@ -13,3 +13,4 @@ type: index
 | [[ADR-006 Keep proposal models]] | Keep XGBoost, BiLSTM and DistilBERT as named in the proposal. | accepted |
 | [[ADR-007 LangGraph and OpenRouter]] | Agents use LangGraph 1.2; LLM calls go to OpenRouter through langchain-openai. | accepted |
 | [[ADR-008 TypeScript 5.9]] | Pin TypeScript 5.9.3, not 7.x. | accepted |
+| [[ADR-009 Code and UI principles]] | Modern, single-theme UI and minimal, human-written code, enforced by a review-and-removal step before every merge. | accepted |
