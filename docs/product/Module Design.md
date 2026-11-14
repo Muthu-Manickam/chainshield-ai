@@ -1,10 +1,10 @@
 ---
 type: product
-status: proposed
+status: agreed
 updated: 2026-11-15
 source: chosen by Fable 5.2 orchestrator from 6 independent plans (3 Opus 5.5, 3 Fable 5.2)
 ---
-# Module Design (proposed)
+# Module Design
 
 6 modules. Winning plan: Fable simplicity plan (88.3/100).
 
