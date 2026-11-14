@@ -20,5 +20,5 @@ Primary `anthropic/claude-haiku-5.5`, fallback `openai/gpt-5-mini`, then a fixed
 Pydantic AI plain pipeline; direct vendor SDKs; LiteLLM (2026 supply-chain incidents).
 
 ## Related
-- [[Agents]]
-- [[LLM client]]
+- [[Tech Stack]]
+- [[ADR-003 Single Python backend]]

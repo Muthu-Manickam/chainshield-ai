@@ -1,7 +1,7 @@
 ---
 type: index
 ---
-# Decisions
+# Tech stack decisions
 
 | ID | Decision | Status |
 |---|---|---|
@@ -13,8 +13,3 @@ type: index
 | [[ADR-006 Keep proposal models]] | Keep XGBoost, BiLSTM and DistilBERT as named in the proposal. | accepted |
 | [[ADR-007 LangGraph and OpenRouter]] | Agents use LangGraph 1.2; LLM calls go to OpenRouter through langchain-openai. | accepted |
 | [[ADR-008 TypeScript 5.9]] | Pin TypeScript 5.9.3, not 7.x. | accepted |
-| [[ADR-009 Personal GitHub repo]] | Code lives in the private repo `Muthu-Manickam/chainshield-ai`. | accepted |
-| [[ADR-010 India-Nepal corpus]] | Decide whether to use the India-Nepal corpus. | open |
-| [[ADR-011 CrisisMMD split]] | Use the official CrisisMMD text split instead of the tracker's 8,369/3,504/4,145. | open |
-| [[ADR-012 Incident-to-order link]] | Decide whether to link incidents to orders. | open |
-| [[ADR-013 BiLSTM cascade]] | How to use BiLSTM screening before DistilBERT classification. | open |

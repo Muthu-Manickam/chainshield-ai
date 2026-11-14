@@ -20,4 +20,5 @@ Libraries: react-router (pages), TanStack Query (API calls), Recharts via shadcn
 Next.js (second server); TanStack Table, react-hook-form, zod, codegen (not needed yet).
 
 ## Related
-- [[Frontend app]]
+- [[Tech Stack]]
+- [[ADR-008 TypeScript 5.9]]

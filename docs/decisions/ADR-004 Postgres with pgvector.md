@@ -20,5 +20,5 @@ Embeddings in `vector(384)` with HNSW index; keyword search via `tsvector`; LLM 
 SQLite + NumPy (no users/concurrency story); Chroma/FAISS/Pinecone (second store to sync).
 
 ## Related
-- [[Database]]
-- [[RAG]]
+- [[Tech Stack]]
+- [[ADR-003 Single Python backend]]

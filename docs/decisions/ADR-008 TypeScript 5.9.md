@@ -20,4 +20,5 @@ Pinned in `frontend/package.json`.
 TypeScript 7.0.2.
 
 ## Related
-- [[Frontend app]]
+- [[Tech Stack]]
+- [[ADR-002 React with Vite]]

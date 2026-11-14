@@ -20,5 +20,6 @@ FastAPI 0.163 + Pydantic 2.14 + SQLAlchemy 2.1 (sync) + Alembic. Agent runs use 
 Node/Express backend; Redis + Celery workers (unneeded at this scale).
 
 ## Related
-- [[Backend API]]
-- [[Agents]]
+- [[Tech Stack]]
+- [[ADR-005 Auth in FastAPI]]
+- [[ADR-007 LangGraph and OpenRouter]]

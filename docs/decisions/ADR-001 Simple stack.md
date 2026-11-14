@@ -20,6 +20,7 @@ Locked in `STACK.lock.md`. Add a library only when the code would be clearly lon
 Next.js + Turborepo + pnpm monorepo (too much tooling); Streamlit + SQLite (no real users/dashboards).
 
 ## Related
+- [[Tech Stack]]
 - [[ADR-002 React with Vite]]
 - [[ADR-003 Single Python backend]]
 - [[ADR-004 Postgres with pgvector]]

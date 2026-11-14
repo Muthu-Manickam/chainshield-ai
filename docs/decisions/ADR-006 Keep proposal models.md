@@ -20,5 +20,4 @@ XGBoost + Logistic Regression baseline + SHAP; TF-IDF baseline, BiLSTM, DistilBE
 LightGBM, BiGRU, DistilRoBERTa (from the from-scratch stack reviews).
 
 ## Related
-- [[Risk model]]
-- [[Text models]]
+- [[Tech Stack]]

@@ -20,4 +20,5 @@ pwdlib argon2 hashes, PyJWT token in an httpOnly cookie. Roles: analyst, supervi
 Auth.js / Clerk (needs Next.js or a SaaS).
 
 ## Related
-- [[Auth and users]]
+- [[Tech Stack]]
+- [[ADR-003 Single Python backend]]

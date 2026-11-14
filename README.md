@@ -5,4 +5,4 @@ classification, retrieval-augmented guidance, and a multi-agent investigation wo
 
 - Locked tech stack: [STACK.lock.md](STACK.lock.md)
 - Project knowledge base (Obsidian vault): open the `docs/` folder in Obsidian, start at [docs/Home.md](docs/Home.md).
-  Decisions, modules, features, dashboards, datasets and research are tracked there.
+  It currently holds the tech stack selection and the reasons for each choice.
