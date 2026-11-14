@@ -73,8 +73,11 @@ retraining. Details: `docs/product/Product Overview.md`.
 - Chat: one LangGraph agent with read-only tools (max 4 tool calls), same validator, never proposes actions.
 - LLM: temperature 0, structured output (Pydantic), one retry, then template. Every call cached in `llm_cache`.
   `LLM_MODE=replay` serves cache only (offline demo). Hard budget: $3 total; calls stop when the logged cost reaches it.
-- Provider: pending owner choice (personal OpenRouter key or an approved LiteLLM proxy key). Code talks to an
-  OpenAI-compatible endpoint via `langchain-openai` with `base_url` from `Settings`; no `litellm` package.
+- Provider: OpenRouter (owner's personal key) via `langchain-openai` with `base_url` from `Settings`; no `litellm`
+  package. Settings: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL=openai/gpt-6-luna`,
+  `LLM_FALLBACK_MODEL=anthropic/claude-haiku-5.5`, `LLM_MODE`, `LLM_BUDGET_USD=3`.
+- `gpt-6-luna` is a reasoning model: send `reasoning: {effort: "low"}`, no temperature, `max_tokens` ≥ 500
+  (smaller limits return empty content). Request `usage: {include: true}` and add `usage.cost` to the budget log.
 - Tracing: Langfuse (cloud Hobby tier) via its LangChain callback on every graph run and LLM call, enabled when
   `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` are set. `investigation_steps` stays the app's own record.
 
@@ -93,3 +96,4 @@ retraining. Details: `docs/product/Product Overview.md`.
 | Date | Decision | By |
 |---|---|---|
 | 2026-11-15 | Initial decisions above | orchestrator |
+| 2026-11-15 | LLM provider: OpenRouter, gpt-6-luna primary, claude-haiku-5.5 fallback, $3 app budget | owner |
